@@ -1,0 +1,24 @@
+layout {
+    cwd "~/g/zsm/"
+    pane size=1 borderless=true {
+        plugin location="tab-bar"
+    }
+    pane size="80%" split_direction="vertical" {
+      pane
+    }
+    pane {
+        name "logs"
+        command "zsh"
+        args "-c" "tail -f -n100 $(find /private/var/folders -name zellij.log 2>/dev/null)"
+    }
+    pane size=1 borderless=true {
+        plugin location="status-bar"
+    }
+    floating_panes {
+      pane {
+        plugin location="https://github.com/zellij-org/develop-rust-plugin/releases/download/v0.3.0/develop-rust-plugin.wasm" {
+          reload_shortcut "Alt r"
+        }
+      }
+    }
+}

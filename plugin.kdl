@@ -1,0 +1,14 @@
+layout {
+    pane size=1 borderless=true {
+        plugin location="target/wasm32-wasip1/debug/zsm.wasm" {
+            // Optional: Set a default layout for quick session creation with Ctrl+Enter
+            // default_layout "default"
+            
+            // Optional: Configure session name separator (default: ".")
+            // Examples: "." → g.project.subfolder
+            //          "→" → g→project→subfolder
+            //          "_" → g_project_subfolder
+            // session_separator "."
+        }
+    }
+}

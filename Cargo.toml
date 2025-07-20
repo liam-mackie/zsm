@@ -1,0 +1,18 @@
+[package]
+name = "zsm"
+version = "0.2.0"
+authors = ["Liam Mackie <liam@mackie.sh>"]
+edition = "2021"
+description = "A Zellij plugin that integrates zoxide with session management for smart directory-based sessions"
+repository = "https://github.com/liam-mackie/zsm"
+license = "MIT"
+keywords = ["zellij", "plugin", "zoxide", "session", "wasm"]
+categories = ["command-line-utilities", "development-tools"]
+readme = "README.md"
+
+[dependencies]
+zellij-tile = "0.42.2"
+serde = { version = "1.0.164", features = ["derive"] }
+fuzzy-matcher = "0.3.7"
+uuid = { version = "1.8.0", features = ["v4"] }
+dirs = "6.0.0"
