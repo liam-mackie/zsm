@@ -21,8 +21,13 @@ ZSM bridges the gap between `zoxide` and Zellij's session management:
 
 ### Option 1: Download Release (Recommended)
 1. Download the latest `zsm.wasm` from [Releases](https://github.com/your-repo/zsm/releases)
-2. Copy it to your Zellij plugins directory
-3. Add to your Zellij layout (see [Configuration](#-configuration))
+2. Copy it to your Zellij plugins directory (~/.config/zellij/plugins/):
+3. Add to your Zellij configuration (see [Configuration](#-configuration))
+
+```bash
+mdir -p ~/.config/zellij/plugins
+curl -sSL -o ~/.config/zellij/plugins https://github.com/liam-mackie/zsm/releases/download/v0.1.0/zsm.wasm
+```
 
 ### Option 2: Build from Source
 ```bash
@@ -45,7 +50,8 @@ keybinds clear-defaults=true {
 ...
     shared_except "locked" {
         bind "<your-key>" { 
-            LaunchOrFocusPlugin "file:~/.config/zellij/plugins/zsm.wasm" {
+            // Note: you must use the absolulte path to the plugin file
+            LaunchOrFocusPlugin "file:/your/home/dir/.config/zellij/plugins/zsm.wasm" {
                 floating true
                 move_to_focused_tab true
             }
@@ -55,13 +61,14 @@ keybinds clear-defaults=true {
 }
 ```
 
-### Advanced Configuration - with layout and options
+### Advanced Configuration - with options
 ```kdl
 keybinds clear-defaults=true {
 ...
     shared_except "locked" {
         bind "<your-key>" { 
-            LaunchOrFocusPlugin "file:~/.config/zellij/plugins/zsm.wasm" {
+            // Note: you must use the absolulte path to the plugin file
+            LaunchOrFocusPlugin "file:/your/home/dir/.config/zellij/plugins/zsm.wasm" {
                 floating true
                 move_to_focused_tab true
                 
@@ -69,18 +76,11 @@ keybinds clear-defaults=true {
                 default_layout "development"
             
                 // Session name separator (default: ".")
-                session_separator "."
+                session_separator "_"
             }
         }
     }
 ...
-
-layout {
-    pane size=1 borderless=true {
-        plugin location="file:/path/to/zsm.wasm" {
-        }
-    }
-}
 ```
 
 ### Configuration Options
@@ -89,32 +89,6 @@ layout {
 |---------------------|-------------------------------------------|---------|-----------------|
 | `default_layout`    | Layout name for Ctrl+Enter quick creation | None    | `"development"` |
 | `session_separator` | Character used in session names           | `"."`   | `"-"` or `"_"`  |
-
-## 🎮 Usage
-
-### Main Screen Controls
-
-| Key          | Action                                       |
-|--------------|----------------------------------------------|
-| `↑/↓`        | Navigate through directories and sessions    |
-| `Type`       | Search/filter by name (fuzzy search)         |
-| `Enter`      | Switch to session OR create new session      |
-| `Ctrl+Enter` | **Quick create** session with default layout |
-| `Delete`     | Kill selected session (with confirmation)    |
-| `Esc`        | Clear search OR exit plugin                  |
-
-### New Session Screen Controls
-
-| Key          | Action                                  |
-|--------------|-----------------------------------------|
-| `↑/↓`        | Navigate layout options                 |
-| `Type`       | Search layouts                          |
-| `Enter`      | Create session with selected layout     |
-| `Ctrl+Enter` | **Quick create** with default layout    |
-| `Ctrl+F`     | Open filepicker for folder selection    |
-| `Ctrl+C`     | Clear selected folder                   |
-| `Ctrl+R`     | Go back to edit session name            |
-| `Esc`        | Go back (clear search first if present) |
 
 ## 🎯 How It Works
 
@@ -150,9 +124,9 @@ ZSM automatically generates meaningful session names:
 **Create new session**
 1. Open ZSM  
 2. Navigate to directory
-3. Press `Enter` → Opens session creation
-4. Choose layout (or `Ctrl+Enter` for default)
-5. Session created in that directory
+3. Press `Enter` → Opens session creation (or `Ctrl+Enter` for default)
+4. Choose layout 
+5. Session is created in that directory
 
 ## 🔐 Permissions
 
