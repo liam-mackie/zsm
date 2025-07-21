@@ -20,9 +20,9 @@ ZSM bridges the gap between `zoxide` and Zellij's session management:
 ## 📦 Installation
 
 ### Option 1: Download Release (Recommended)
-1. Download the latest `zsm.wasm` from [Releases](https://github.com/your-repo/zsm/releases)
+1. Download the latest `zsm.wasm` from [Releases](https://github.com/liam-mackie/zsm/releases)
 2. Copy it to your Zellij plugins directory (~/.config/zellij/plugins/):
-3. Add to your Zellij configuration (see [Configuration](#-configuration))
+3. Add to your Zellij configuration (see [Configuration](#--configuration))
 
 ```bash
 mdir -p ~/.config/zellij/plugins
@@ -30,6 +30,7 @@ curl -sSL -o ~/.config/zellij/plugins https://github.com/liam-mackie/zsm/release
 ```
 
 ### Option 2: Build from Source
+
 ```bash
 # Add WASM target if not already added
 rustup target add wasm32-wasip1
@@ -45,6 +46,7 @@ cargo build --target wasm32-wasip1 --release
 Add ZSM to your configuration file (e.g., `~/.config/zellij/config.kdl`):
 
 ### Basic Configuration - bind to a key
+
 ```kdl
 keybinds clear-defaults=true {
 ...
@@ -93,7 +95,9 @@ keybinds clear-defaults=true {
 ## 🎯 How It Works
 
 ### 1. Directory Display
+
 ZSM shows your zoxide directories ranked by usage frequency:
+
 ```
 ~/projects/my-app        (most used)
 ~/work/client-project
@@ -102,6 +106,7 @@ ZSM shows your zoxide directories ranked by usage frequency:
 ```
 
 ### 2. Smart Session Naming
+
 ZSM automatically generates meaningful session names:
 
 - **Simple**: `~/projects/webapp` → `webapp`
@@ -110,6 +115,7 @@ ZSM automatically generates meaningful session names:
 - **Long names**: Intelligent abbreviation → `very-long-project-name` → `v-l-p-name`
 
 ### 3. Session Integration
+
 - **Existing sessions** are shown with indicators: `● current` or `○ available`
 - **Both sessions AND directories** are displayed for complete context
 - **Auto-increment**: If session `webapp` exists, creates `webapp.2`, `webapp.3`, etc.
@@ -117,11 +123,13 @@ ZSM automatically generates meaningful session names:
 ### 4. Quick Workflows
 
 **Jump to existing session**
+
 1. Open ZSM
 2. Type to search for session
 3. Press `Enter` → Instantly switch
 
 **Create new session**
+
 1. Open ZSM  
 2. Navigate to directory
 3. Press `Enter` → Opens session creation (or `Ctrl+Enter` for default)
@@ -131,6 +139,7 @@ ZSM automatically generates meaningful session names:
 ## 🔐 Permissions
 
 ZSM requires these Zellij permissions:
+
 - **RunCommands**: Execute zoxide queries
 - **ReadApplicationState**: Read existing sessions and layouts
 - **ChangeApplicationState**: Create and switch sessions  
@@ -139,22 +148,27 @@ ZSM requires these Zellij permissions:
 ## 🐛 Troubleshooting
 
 ### No directories showing?
+
 - Ensure zoxide is installed: `which zoxide`
 - Build up your directory database by navigating around: `cd ~/projects && cd ~/work`
 - Check zoxide database: `zoxide query -l`
 
 ### Default layout not working?
+
 - Verify layout name matches exactly (case-sensitive)
 - Check available layouts in Zellij
 - Layout must exist in current session
 
 ### Filepicker issues?
+
 - Ensure MessageAndLaunchOtherPlugins permission is granted
 
 ## 🚧 Development
 
 ### Local Development
+
 #### Option 1: Using Zellij Plugin Layout
+
 ```bash
 # Start the plugin development layout
 zellij -l zellij.kdl
@@ -164,6 +178,7 @@ zellij action launch-or-focus-plugin file:target/wasm32-wasip1/debug/zsm.wasm
 ```
 
 #### Option 2: Using watchexec
+
 ```bash
 watchexec --exts rs -- 'cargo build --target wasm-wasip1; zellij action start-or-reload-plugin file:target/wasm32-wasip1/debug/zsm.wasm'
 ```
@@ -175,3 +190,4 @@ Contributions welcome, though my time is limited so please be patient with revie
 ---
 
 **Made with ❤️ for the Zellij community**
+
