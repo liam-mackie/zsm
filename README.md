@@ -25,7 +25,7 @@ ZSM bridges the gap between `zoxide` and Zellij's session management:
 3. Add to your Zellij configuration (see [Configuration](#%EF%B8%8F-configuration))
 
 ```bash
-mdir -p ~/.config/zellij/plugins
+mkdir -p ~/.config/zellij/plugins
 curl -sSL -o ~/.config/zellij/plugins https://github.com/liam-mackie/zsm/releases/download/v0.1.0/zsm.wasm
 ```
 
@@ -52,7 +52,7 @@ keybinds clear-defaults=true {
 ...
     shared_except "locked" {
         bind "<your-key>" { 
-            // Note: you must use the absolulte path to the plugin file
+            // Note: you must use the absolute path to the plugin file
             LaunchOrFocusPlugin "file:/your/home/dir/.config/zellij/plugins/zsm.wasm" {
                 floating true
                 move_to_focused_tab true
