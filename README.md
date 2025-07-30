@@ -79,6 +79,9 @@ keybinds clear-defaults=true {
             
                 // Session name separator (default: ".")
                 session_separator "_"
+                
+                // Show sessions that can be resurrected
+                show_resurrectable_sessions true
             }
         }
     }
@@ -87,10 +90,11 @@ keybinds clear-defaults=true {
 
 ### Configuration Options
 
-| Option              | Description                               | Default | Example         |
-|---------------------|-------------------------------------------|---------|-----------------|
-| `default_layout`    | Layout name for Ctrl+Enter quick creation | None    | `"development"` |
-| `session_separator` | Character used in session names           | `"."`   | `"-"` or `"_"`  |
+| Option                        | Description                               | Default | Example         |
+|-------------------------------|-------------------------------------------|---------|-----------------|
+| `default_layout`              | Layout name for Ctrl+Enter quick creation | None    | `"development"` |
+| `session_separator`           | Character used in session names           | `"."`   | `"-"` or `"_"`  |
+| `show_resurrectable_sessions` | Show sessions that can be resurrected     | `false` | `true`          |
 
 ## 🎯 How It Works
 
@@ -117,7 +121,7 @@ ZSM automatically generates meaningful session names:
 ### 3. Session Integration
 
 - **Existing sessions** are shown with indicators: `● current` or `○ available`
-- **Both sessions AND directories** are displayed for complete context
+- **Resurrectable sessions** (if enabled) are shown with a `↺` icon
 - **Auto-increment**: If session `webapp` exists, creates `webapp.2`, `webapp.3`, etc.
 
 ### 4. Quick Workflows

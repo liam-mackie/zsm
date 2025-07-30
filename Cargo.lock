@@ -915,6 +915,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "humantime"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9b112acc8b3adf4b107a8ec20977da0273a8c386765a3ec0229bd500a1443f9f"
+
+[[package]]
 name = "idna"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2994,6 +3000,7 @@ version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
  "fuzzy-matcher",
+ "humantime",
  "serde",
  "uuid",
  "zellij-tile",

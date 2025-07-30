@@ -1,3 +1,4 @@
+use std::time::Duration;
 use zellij_tile::prelude::{SessionInfo, kill_sessions, switch_session};
 use crate::session::types::SessionAction;
 
@@ -8,6 +9,8 @@ pub struct SessionManager {
     sessions: Vec<SessionInfo>,
     /// Session name pending deletion confirmation
     pending_deletion: Option<String>,
+    /// Resurrectable sessions
+    resurrectable_sessions: Vec<(String, Duration)>,
 }
 
 impl SessionManager {
@@ -16,10 +19,21 @@ impl SessionManager {
         self.sessions = sessions;
     }
 
+    /// Update the resurrectable sessions
+    pub fn update_resurrectable_sessions(&mut self, resurrectable_sessions: Vec<(String, Duration)>) {
+        self.resurrectable_sessions = resurrectable_sessions;
+    }
+
     /// Get all sessions
     pub fn sessions(&self) -> &[SessionInfo] {
         &self.sessions
     }
+    
+    /// Get all resurrectable sessions
+    pub fn resurrectable_sessions(&self) -> &[(String, Duration)] {
+        &self.resurrectable_sessions
+    }
+
 
     /// Execute a session action
     pub fn execute_action(&mut self, action: SessionAction) {
