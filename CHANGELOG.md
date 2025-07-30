@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/liam-mackie/zsm/compare/v0.1.0...v0.2.0) (2025-07-30)
+
+
+### 🚀 Features
+
+* add resurrectable sessions ([#9](https://github.com/liam-mackie/zsm/issues/9)) ([b1c0372](https://github.com/liam-mackie/zsm/commit/b1c03721928dce1e161b211746f97e3afa4d134a))
+
 ## [0.1.0](https://github.com/liam-mackie/zsm/compare/v0.1.0...v0.1.0) (2025-07-20)
 
 
