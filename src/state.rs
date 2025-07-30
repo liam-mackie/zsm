@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 use zellij_tile::prelude::*;
 
 use crate::config::Config;
@@ -86,6 +87,13 @@ impl PluginState {
         self.update_search_if_needed();
     }
 
+    /// Update session information for resurrectable sessions
+    pub fn update_resurrectable_sessions(&mut self, resurrectable_sessions: Vec<(String, Duration)>) {
+        self.session_manager.update_resurrectable_sessions(resurrectable_sessions);
+        self.update_search_if_needed();
+    }
+
+
     /// Update zoxide directories (managed separately from sessions)
     pub fn update_zoxide_directories(&mut self, directories: Vec<ZoxideDirectory>) {
         self.zoxide_directories = directories;
@@ -149,7 +157,25 @@ impl PluginState {
                 }
             }
         }
-        
+
+        // Add resurrectable sessions if configured to show them
+        if self.config.show_resurrectable_sessions {
+            for (name, duration) in self.session_manager.resurrectable_sessions() {
+                // Check if this session name matches any generated session name from zoxide directories
+                for zoxide_dir in &self.zoxide_directories {
+                    // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
+                    if name == &zoxide_dir.session_name ||
+                        self.is_incremented_session(name, &zoxide_dir.session_name) {
+                        items.push(SessionItem::ResurrectableSession {
+                            name: name.clone(),
+                            duration: duration.clone(),
+                        });
+                        break;
+                    }
+                }
+            }
+        }
+
         // Then add all zoxide directories (always show directories, even if sessions exist)
         for dir in &self.zoxide_directories {
             items.push(SessionItem::Directory {
@@ -405,6 +431,9 @@ impl PluginState {
                 SessionItem::Directory { session_name, path, .. } => {
                     (false, session_name, path)
                 }
+                SessionItem::ResurrectableSession {name, ..} => {
+                    (true, name, String::new())
+                }
             }
         });
 
@@ -509,6 +538,11 @@ impl PluginState {
             match selected_item {
                 SessionItem::ExistingSession { name, .. } => {
                     // Switch to existing session
+                    switch_session_with_cwd(Some(&name), None);
+                    hide_self();
+                    return;
+                }
+                SessionItem::ResurrectableSession { name, .. } => {
                     switch_session_with_cwd(Some(&name), None);
                     hide_self();
                     return;

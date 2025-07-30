@@ -161,6 +161,10 @@ impl PluginRenderer {
                     // Indices should match the display text exactly
                     indices.to_vec()
                 }
+                SessionItem::ResurrectableSession { .. } => {
+                    // Indices should match the display text exactly
+                    indices.to_vec()
+                }
                 SessionItem::Directory { path, .. } => {
                     // Handle truncation for long paths
                     if path.len() > max_width && max_width > 10 {
@@ -199,12 +203,8 @@ impl PluginRenderer {
             SessionItem::ExistingSession { name, directory, is_current } => {
                 let prefix = if *is_current { "● " } else { "○ " };
                 let display_text = format!("{}{} ({})", prefix, name, directory);
-                
-                let truncated_text = if display_text.len() > max_width && max_width > 10 {
-                    format!("{}...{}", &display_text[..10], &display_text[display_text.len().saturating_sub(max_width - 13)..])
-                } else {
-                    display_text
-                };
+
+                let truncated_text = Self::get_truncated_text(&display_text, max_width);
                 
                 if let Some(theme) = theme {
                     if *is_current {
@@ -220,6 +220,17 @@ impl PluginRenderer {
                         text = text.color_range(3, ..);
                     }
                     text
+                }
+            }
+            SessionItem::ResurrectableSession {name, duration } => {
+                let display_text = format!("↺ {} (created {} ago)", name, humantime::format_duration(*duration));
+
+                let truncated_text = Self::get_truncated_text(&display_text, max_width);
+
+                if let Some(theme) = theme {
+                    theme.available_session(&truncated_text)
+                } else {
+                    Text::new(&truncated_text).color_range(4, ..)
                 }
             }
             SessionItem::Directory { path, .. } => {
@@ -308,6 +319,14 @@ impl PluginRenderer {
             (first_row_index, last_row_index)
         } else {
             (0, items_len)
+        }
+    }
+
+    fn get_truncated_text(text: &str, max_width: usize) -> String {
+        if text.len() > max_width && max_width > 10 {
+            format!("{}...{}", &text[..10], &text[text.len().saturating_sub(max_width - 13)..])
+        } else {
+            text.to_string()
         }
     }
 }

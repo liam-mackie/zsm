@@ -7,7 +7,6 @@ mod zoxide;
 
 use zellij_tile::prelude::*;
 use std::collections::BTreeMap;
-
 use state::PluginState;
 use ui::PluginRenderer;
 
@@ -61,8 +60,9 @@ impl ZellijPlugin for PluginState {
                     }
                 }
             }
-            Event::SessionUpdate(session_infos, _) => {
+            Event::SessionUpdate(session_infos, resurrectable_session_infos) => {
                 self.update_sessions(session_infos);
+                self.update_resurrectable_sessions(resurrectable_session_infos);
                 should_render = true;
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {

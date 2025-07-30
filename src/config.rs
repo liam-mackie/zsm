@@ -7,6 +7,8 @@ pub struct Config {
     pub default_layout: Option<String>,
     /// Separator used in session names (default: ".")
     pub session_separator: String,
+    /// Whether you'd like resurrectable sessions to be shown in the session list
+    pub show_resurrectable_sessions: bool,
 }
 
 impl Default for Config {
@@ -14,6 +16,7 @@ impl Default for Config {
         Self {
             default_layout: None,
             session_separator: ".".to_string(),
+            show_resurrectable_sessions: false,
         }
     }
 }
@@ -27,6 +30,10 @@ impl Config {
                 .get("session_separator")
                 .cloned()
                 .unwrap_or_else(|| ".".to_string()),
+            show_resurrectable_sessions: config
+                .get("show_resurrectable_sessions")
+                .map(|v| v == "true")
+                .unwrap_or(false),
         }
     }
 }

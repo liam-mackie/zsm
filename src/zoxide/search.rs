@@ -146,9 +146,9 @@ impl SearchEngine {
 
         // Sort results: sessions first, then by score
         matches.sort_by(|a, b| {
-            let a_is_session = a.item.is_session();
-            let b_is_session = b.item.is_session();
-            
+            let a_is_session = a.item.is_session() || a.item.is_resurrectable_session();
+            let b_is_session = b.item.is_session() || b.item.is_resurrectable_session();
+
             match (a_is_session, b_is_session) {
                 (true, false) => std::cmp::Ordering::Less,  // a (session) comes first
                 (false, true) => std::cmp::Ordering::Greater, // b (session) comes first
@@ -180,6 +180,10 @@ impl SearchEngine {
             SessionItem::ExistingSession { name, directory, is_current } => {
                 let prefix = if *is_current { "● " } else { "○ " };
                 format!("{}{} ({})", prefix, name, directory)
+            }
+            SessionItem::ResurrectableSession {name, duration} => {
+                // For resurrectable sessions, we show the name and duration
+                format!("↺ {} (created {} ago)", name, humantime::format_duration(*duration))
             }
             SessionItem::Directory { path, .. } => {
                 // For directories, we search the full path as displayed
