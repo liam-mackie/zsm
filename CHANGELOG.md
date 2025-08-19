@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/liam-mackie/zsm/compare/v0.2.0...v0.3.0) (2025-08-19)
+
+
+### 🚀 Features
+
+* add reload shortcut ([#13](https://github.com/liam-mackie/zsm/issues/13)) ([d68c26a](https://github.com/liam-mackie/zsm/commit/d68c26ac215a0a44468f60110a3d4a5c5d2f2c92))
+
 ## [0.2.0](https://github.com/liam-mackie/zsm/compare/v0.1.0...v0.2.0) (2025-07-30)
 
 
