@@ -308,6 +308,11 @@ impl PluginState {
                 hide_self();
                 false
             }
+            BareKey::Char('r') if key.has_modifiers(&[KeyModifier::Ctrl]) => {
+                // reload zoxide directories
+                self.fetch_zoxide_directories();
+                true
+            }
             _ => false,
         }
     }
