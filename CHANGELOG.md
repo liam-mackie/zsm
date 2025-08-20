@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/liam-mackie/zsm/compare/v0.3.0...v0.3.1) (2025-08-20)
+
+
+### 🐛 Bug Fixes
+
+* delete resurrectable sessions ([#15](https://github.com/liam-mackie/zsm/issues/15)) ([dbbe8a8](https://github.com/liam-mackie/zsm/commit/dbbe8a87b2ba98b0c1a3bb821c42391761540e51))
+
 ## [0.3.0](https://github.com/liam-mackie/zsm/compare/v0.2.0...v0.3.0) (2025-08-19)
 
 
