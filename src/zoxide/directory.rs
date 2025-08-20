@@ -14,7 +14,8 @@ pub struct ZoxideDirectory {
 impl Ord for ZoxideDirectory {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Sort by ranking in descending order (higher scores first)
-        other.ranking
+        other
+            .ranking
             .partial_cmp(&self.ranking)
             .unwrap_or(std::cmp::Ordering::Equal)
             .then(self.directory.cmp(&other.directory))
@@ -29,5 +30,4 @@ impl PartialOrd for ZoxideDirectory {
 
 impl Eq for ZoxideDirectory {}
 
-impl ZoxideDirectory {
-}
+impl ZoxideDirectory {}
