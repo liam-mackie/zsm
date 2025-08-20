@@ -77,7 +77,8 @@ impl SessionManager {
 
     /// Generate incremented session name for a base name
     pub fn generate_incremented_name(&self, base_name: &str, separator: &str) -> String {
-        let base_exists = self.sessions.iter().any(|s| s.name == base_name);
+        let base_exists = self.sessions.iter().any(|s| s.name == base_name) ||
+                          self.resurrectable_sessions.iter().any(|(name, _)| name == base_name);
         
         if !base_exists {
             return base_name.to_string();
@@ -92,7 +93,7 @@ impl SessionManager {
                 return candidate;
             }
         }
-        
+
         // Fallback with UUID if too many increments
         format!("{}{}{}", base_name, separator, uuid::Uuid::new_v4().to_string()[..8].to_string())
     }
