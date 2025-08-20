@@ -462,6 +462,7 @@ impl PluginState {
         let selected_session_name = self.selected_item().and_then(|item| {
             match item {
                 SessionItem::ExistingSession { name, .. } => Some(name),
+                SessionItem::ResurrectableSession { name, .. } => Some(name),
                 _ => None,
             }
         });

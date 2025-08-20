@@ -280,8 +280,8 @@ impl PluginRenderer {
         let dialog_x = x + (width.saturating_sub(dialog_width)) / 2;
         let dialog_y = y + (height.saturating_sub(dialog_height)) / 2;
         
-        let message = format!("Delete session '{}'?", session_name);
-        let warning = "This action cannot be undone.";
+        let message = format!("Kill session '{}'?", session_name);
+        let warning = "If this is a resurrectable session, it will be deleted. This action cannot be undone.";
         let prompt = "Press 'y' to confirm, 'n' or Esc to cancel";
         
         let dialog_lines = vec![

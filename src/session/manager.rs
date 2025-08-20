@@ -1,5 +1,5 @@
 use std::time::Duration;
-use zellij_tile::prelude::{SessionInfo, kill_sessions, switch_session};
+use zellij_tile::prelude::{SessionInfo, kill_sessions, delete_dead_session, switch_session};
 use crate::session::types::SessionAction;
 
 /// Manages session operations and state
@@ -42,7 +42,13 @@ impl SessionManager {
                 switch_session(Some(&name));
             }
             SessionAction::Kill(name) => {
-                kill_sessions(&[&name]);
+                if self.resurrectable_sessions.iter().any(|(session_name, _)| session_name == &name) {
+                    // If the session is resurrectable, we should delete it
+                    delete_dead_session(&name);
+                } else {
+                    // Otherwise, we need to kill the session
+                    kill_sessions(&[&name]);
+                }
             }
         }
     }
