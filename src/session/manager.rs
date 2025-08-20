@@ -1,6 +1,6 @@
-use std::time::Duration;
-use zellij_tile::prelude::{SessionInfo, kill_sessions, switch_session};
 use crate::session::types::SessionAction;
+use std::time::Duration;
+use zellij_tile::prelude::{delete_dead_session, kill_sessions, switch_session, SessionInfo};
 
 /// Manages session operations and state
 #[derive(Debug, Default)]
@@ -20,7 +20,10 @@ impl SessionManager {
     }
 
     /// Update the resurrectable sessions
-    pub fn update_resurrectable_sessions(&mut self, resurrectable_sessions: Vec<(String, Duration)>) {
+    pub fn update_resurrectable_sessions(
+        &mut self,
+        resurrectable_sessions: Vec<(String, Duration)>,
+    ) {
         self.resurrectable_sessions = resurrectable_sessions;
     }
 
@@ -28,12 +31,11 @@ impl SessionManager {
     pub fn sessions(&self) -> &[SessionInfo] {
         &self.sessions
     }
-    
+
     /// Get all resurrectable sessions
     pub fn resurrectable_sessions(&self) -> &[(String, Duration)] {
         &self.resurrectable_sessions
     }
-
 
     /// Execute a session action
     pub fn execute_action(&mut self, action: SessionAction) {
@@ -42,7 +44,17 @@ impl SessionManager {
                 switch_session(Some(&name));
             }
             SessionAction::Kill(name) => {
-                kill_sessions(&[&name]);
+                if self
+                    .resurrectable_sessions
+                    .iter()
+                    .any(|(session_name, _)| session_name == &name)
+                {
+                    // If the session is resurrectable, we should delete it
+                    delete_dead_session(&name);
+                } else {
+                    // Otherwise, we need to kill the session
+                    kill_sessions(&[&name]);
+                }
             }
         }
     }
@@ -71,23 +83,32 @@ impl SessionManager {
 
     /// Generate incremented session name for a base name
     pub fn generate_incremented_name(&self, base_name: &str, separator: &str) -> String {
-        let base_exists = self.sessions.iter().any(|s| s.name == base_name);
-        
+        let base_exists = self.sessions.iter().any(|s| s.name == base_name)
+            || self
+                .resurrectable_sessions
+                .iter()
+                .any(|(name, _)| name == base_name);
+
         if !base_exists {
             return base_name.to_string();
         }
-        
+
         // Find the next available increment
         for counter in 2..=1000 {
             let candidate = format!("{}{}{}", base_name, separator, counter);
             let exists = self.sessions.iter().any(|s| s.name == candidate);
-            
+
             if !exists {
                 return candidate;
             }
         }
-        
+
         // Fallback with UUID if too many increments
-        format!("{}{}{}", base_name, separator, uuid::Uuid::new_v4().to_string()[..8].to_string())
+        format!(
+            "{}{}{}",
+            base_name,
+            separator,
+            uuid::Uuid::new_v4().to_string()[..8].to_string()
+        )
     }
 }

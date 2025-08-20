@@ -1,4 +1,3 @@
-
 /// Represents different types of items that can be displayed in the session list
 #[derive(Debug, Clone)]
 pub enum SessionItem {
@@ -14,10 +13,7 @@ pub enum SessionItem {
         duration: std::time::Duration,
     },
     /// A zoxide directory that can be used to create a new session
-    Directory {
-        path: String,
-        session_name: String,
-    },
+    Directory { path: String, session_name: String },
 }
 
 impl SessionItem {

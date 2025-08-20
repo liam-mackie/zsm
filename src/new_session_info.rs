@@ -27,23 +27,23 @@ impl NewSessionInfo {
     pub fn name(&self) -> &str {
         &self.name
     }
-    
+
     pub fn set_name(&mut self, name: &str) {
         self.name = name.to_string();
     }
-    
+
     pub fn set_folder(&mut self, folder: Option<PathBuf>) {
         self.new_session_folder = folder;
     }
-    
+
     pub fn new_session_folder(&self) -> Option<&PathBuf> {
         self.new_session_folder.as_ref()
     }
-    
+
     pub fn advance_to_layout_selection(&mut self) {
         self.entering_new_session_info = EnteringState::EnteringLayoutSearch;
     }
-    
+
     pub fn correct_session_name(&mut self) {
         // Go back to session name entry from layout selection
         self.layout_list.layout_search_term.clear();
@@ -63,50 +63,50 @@ impl NewSessionInfo {
         match self.entering_new_session_info {
             EnteringState::EnteringName => {
                 self.name.push(character);
-            },
+            }
             EnteringState::EnteringLayoutSearch => {
                 self.layout_list.layout_search_term.push(character);
                 self.update_layout_search_term();
-            },
+            }
         }
     }
     pub fn handle_backspace(&mut self) {
         match self.entering_new_session_info {
             EnteringState::EnteringName => {
                 self.name.pop();
-            },
+            }
             EnteringState::EnteringLayoutSearch => {
                 self.layout_list.layout_search_term.pop();
                 self.update_layout_search_term();
-            },
+            }
         }
     }
     pub fn handle_break(&mut self) {
         match self.entering_new_session_info {
             EnteringState::EnteringName => {
                 self.name.clear();
-            },
+            }
             EnteringState::EnteringLayoutSearch => {
                 self.layout_list.layout_search_term.clear();
                 self.entering_new_session_info = EnteringState::EnteringName;
                 self.update_layout_search_term();
-            },
+            }
         }
     }
     pub fn handle_key(&mut self, key: KeyWithModifier) {
         match key.bare_key {
             BareKey::Backspace if key.has_no_modifiers() => {
                 self.handle_backspace();
-            },
+            }
             BareKey::Char('c') if key.has_modifiers(&[KeyModifier::Ctrl]) => {
                 self.handle_break();
-            },
+            }
             BareKey::Char('r') if key.has_modifiers(&[KeyModifier::Ctrl]) => {
                 // Ctrl+R to correct session name - only when in layout search mode
                 if self.entering_new_session_info == EnteringState::EnteringLayoutSearch {
                     self.correct_session_name();
                 }
-            },
+            }
             BareKey::Esc if key.has_no_modifiers() => {
                 // Esc goes back to previous state or clears current input
                 match self.entering_new_session_info {
@@ -119,53 +119,60 @@ impl NewSessionInfo {
                             // No search term, go back to name entry
                             self.entering_new_session_info = EnteringState::EnteringName;
                         }
-                    },
+                    }
                     EnteringState::EnteringName => {
                         // In name entry, clear the name
                         self.name.clear();
-                    },
+                    }
                 }
-            },
+            }
             BareKey::Char(character) if key.has_no_modifiers() => {
                 self.add_char(character);
-            },
+            }
             BareKey::Up if key.has_no_modifiers() => {
                 self.move_selection_up();
-            },
+            }
             BareKey::Down if key.has_no_modifiers() => {
                 self.move_selection_down();
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
-    
-    pub fn handle_quick_session_creation(&mut self, current_session_name: &Option<String>, default_layout: &Option<String>) {
+
+    pub fn handle_quick_session_creation(
+        &mut self,
+        current_session_name: &Option<String>,
+        default_layout: &Option<String>,
+    ) {
         let new_session_name = if self.name.is_empty() {
             None
         } else {
             Some(self.name.as_str())
         };
-        
+
         if new_session_name != current_session_name.as_ref().map(|s| s.as_str()) {
             match default_layout {
                 Some(layout_name) => {
                     // Find the layout by name
-                    let layout_info = self.layout_list.layout_list.iter()
+                    let layout_info = self
+                        .layout_list
+                        .layout_list
+                        .iter()
                         .find(|layout| layout.name() == layout_name)
                         .cloned();
-                    
+
                     match layout_info {
                         Some(layout) => {
                             let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
                             switch_session_with_layout(new_session_name, layout, cwd);
-                        },
+                        }
                         None => {
                             // Default layout not found, create without layout but with folder
                             let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
                             switch_session_with_cwd(new_session_name, cwd);
                         }
                     }
-                },
+                }
                 None => {
                     // No default layout configured, create without layout but with folder
                     let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
@@ -173,12 +180,12 @@ impl NewSessionInfo {
                 }
             }
         }
-        
+
         self.name.clear();
         self.layout_list.clear_selection();
         hide_self();
     }
-    
+
     pub fn handle_selection(&mut self, current_session_name: &Option<String>) {
         match self.entering_new_session_info {
             EnteringState::EnteringLayoutSearch => {
@@ -193,20 +200,20 @@ impl NewSessionInfo {
                         Some(new_session_layout) => {
                             let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
                             switch_session_with_layout(new_session_name, new_session_layout, cwd)
-                        },
+                        }
                         None => {
                             let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
                             switch_session_with_cwd(new_session_name, cwd);
-                        },
+                        }
                     }
                 }
                 self.name.clear();
                 self.layout_list.clear_selection();
                 hide_self();
-            },
+            }
             EnteringState::EnteringName => {
                 self.entering_new_session_info = EnteringState::EnteringLayoutSearch;
-            },
+            }
         }
     }
     pub fn update_layout_list(&mut self, layout_info: Vec<LayoutInfo>) {

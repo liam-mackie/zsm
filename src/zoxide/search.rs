@@ -1,6 +1,6 @@
+use crate::session::SessionItem;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use crate::session::SessionItem;
 
 /// Search result containing an item and match information
 #[derive(Debug, Clone)]
@@ -44,7 +44,7 @@ impl SearchEngine {
     pub fn update_search(&mut self, term: String, items: &[SessionItem]) {
         self.search_term = term;
         self.is_searching = !self.search_term.is_empty();
-        
+
         if self.is_searching {
             self.perform_search(items);
         } else {
@@ -133,9 +133,11 @@ impl SearchEngine {
         for item in items {
             // Create the display text that will actually be shown
             let display_text = Self::get_display_text_for_search(item);
-            
+
             // Match against the actual display text
-            if let Some((score, indices)) = self.matcher.fuzzy_indices(&display_text, &self.search_term) {
+            if let Some((score, indices)) =
+                self.matcher.fuzzy_indices(&display_text, &self.search_term)
+            {
                 matches.push(SearchResult {
                     item: item.clone(),
                     score,
@@ -150,14 +152,14 @@ impl SearchEngine {
             let b_is_session = b.item.is_session() || b.item.is_resurrectable_session();
 
             match (a_is_session, b_is_session) {
-                (true, false) => std::cmp::Ordering::Less,  // a (session) comes first
+                (true, false) => std::cmp::Ordering::Less, // a (session) comes first
                 (false, true) => std::cmp::Ordering::Greater, // b (session) comes first
-                _ => b.score.cmp(&a.score), // Same type, sort by score
+                _ => b.score.cmp(&a.score),                // Same type, sort by score
             }
         });
 
         self.results = matches;
-        
+
         // Update selected index
         if self.results.is_empty() {
             self.selected_index = None;
@@ -177,13 +179,21 @@ impl SearchEngine {
     /// Get the display text used for searching (matches what's rendered)
     fn get_display_text_for_search(item: &SessionItem) -> String {
         match item {
-            SessionItem::ExistingSession { name, directory, is_current } => {
+            SessionItem::ExistingSession {
+                name,
+                directory,
+                is_current,
+            } => {
                 let prefix = if *is_current { "● " } else { "○ " };
                 format!("{}{} ({})", prefix, name, directory)
             }
-            SessionItem::ResurrectableSession {name, duration} => {
+            SessionItem::ResurrectableSession { name, duration } => {
                 // For resurrectable sessions, we show the name and duration
-                format!("↺ {} (created {} ago)", name, humantime::format_duration(*duration))
+                format!(
+                    "↺ {} (created {} ago)",
+                    name,
+                    humantime::format_duration(*duration)
+                )
             }
             SessionItem::Directory { path, .. } => {
                 // For directories, we search the full path as displayed

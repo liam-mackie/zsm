@@ -3,9 +3,9 @@ use std::time::Duration;
 use zellij_tile::prelude::*;
 
 use crate::config::Config;
-use crate::session::{SessionManager, SessionItem, SessionAction};
-use crate::zoxide::{ZoxideDirectory, SearchEngine};
 use crate::new_session_info::NewSessionInfo;
+use crate::session::{SessionAction, SessionItem, SessionManager};
+use crate::zoxide::{SearchEngine, ZoxideDirectory};
 
 /// The main plugin state
 pub struct PluginState {
@@ -78,7 +78,8 @@ impl PluginState {
         for session in &sessions {
             if session.is_current_session {
                 self.current_session_name = Some(session.name.clone());
-                self.new_session_info.update_layout_list(session.available_layouts.clone());
+                self.new_session_info
+                    .update_layout_list(session.available_layouts.clone());
                 break;
             }
         }
@@ -88,11 +89,14 @@ impl PluginState {
     }
 
     /// Update session information for resurrectable sessions
-    pub fn update_resurrectable_sessions(&mut self, resurrectable_sessions: Vec<(String, Duration)>) {
-        self.session_manager.update_resurrectable_sessions(resurrectable_sessions);
+    pub fn update_resurrectable_sessions(
+        &mut self,
+        resurrectable_sessions: Vec<(String, Duration)>,
+    ) {
+        self.session_manager
+            .update_resurrectable_sessions(resurrectable_sessions);
         self.update_search_if_needed();
     }
-
 
     /// Update zoxide directories (managed separately from sessions)
     pub fn update_zoxide_directories(&mut self, directories: Vec<ZoxideDirectory>) {
@@ -109,7 +113,11 @@ impl PluginState {
         }
 
         // Handle session deletion confirmation
-        if let Some(session_name) = self.session_manager.pending_deletion().map(|s| s.to_string()) {
+        if let Some(session_name) = self
+            .session_manager
+            .pending_deletion()
+            .map(|s| s.to_string())
+        {
             return self.handle_deletion_confirmation(key, &session_name);
         }
 
@@ -128,7 +136,8 @@ impl PluginState {
     pub fn display_items(&self) -> Vec<SessionItem> {
         if self.search_engine.is_searching() {
             // Return items from search results
-            self.search_engine.results()
+            self.search_engine
+                .results()
                 .iter()
                 .map(|result| result.item.clone())
                 .collect()
@@ -140,14 +149,15 @@ impl PluginState {
     /// Combine sessions and zoxide directories for display
     fn combined_items(&self) -> Vec<SessionItem> {
         let mut items = Vec::new();
-        
+
         // First, add existing sessions that match zoxide directories (including incremented ones)
         for session in self.session_manager.sessions() {
             // Check if this session name matches any generated session name from zoxide directories
             for zoxide_dir in &self.zoxide_directories {
                 // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
-                if session.name == zoxide_dir.session_name || 
-                   self.is_incremented_session(&session.name, &zoxide_dir.session_name) {
+                if session.name == zoxide_dir.session_name
+                    || self.is_incremented_session(&session.name, &zoxide_dir.session_name)
+                {
                     items.push(SessionItem::ExistingSession {
                         name: session.name.clone(),
                         directory: zoxide_dir.directory.clone(),
@@ -164,8 +174,9 @@ impl PluginState {
                 // Check if this session name matches any generated session name from zoxide directories
                 for zoxide_dir in &self.zoxide_directories {
                     // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
-                    if name == &zoxide_dir.session_name ||
-                        self.is_incremented_session(name, &zoxide_dir.session_name) {
+                    if name == &zoxide_dir.session_name
+                        || self.is_incremented_session(name, &zoxide_dir.session_name)
+                    {
                         items.push(SessionItem::ResurrectableSession {
                             name: name.clone(),
                             duration: duration.clone(),
@@ -183,7 +194,7 @@ impl PluginState {
                 session_name: dir.session_name.clone(),
             });
         }
-        
+
         items
     }
 
@@ -192,12 +203,12 @@ impl PluginState {
         if session_name.len() <= base_name.len() || !session_name.starts_with(base_name) {
             return false;
         }
-        
+
         let remainder = &session_name[base_name.len()..];
         if !remainder.starts_with(&self.config.session_separator) {
             return false;
         }
-        
+
         let number_part = &remainder[self.config.session_separator.len()..];
         number_part.parse::<u32>().is_ok() && !number_part.is_empty()
     }
@@ -257,8 +268,7 @@ impl PluginState {
             self.search_engine.selected_item().cloned()
         } else {
             let items = self.display_items();
-            self.selected_index
-                .and_then(|i| items.get(i).cloned())
+            self.selected_index.and_then(|i| items.get(i).cloned())
         }
     }
 
@@ -322,7 +332,8 @@ impl PluginState {
         match key.bare_key {
             BareKey::Enter if key.has_no_modifiers() => {
                 // Handle session creation
-                self.new_session_info.handle_selection(&self.current_session_name);
+                self.new_session_info
+                    .handle_selection(&self.current_session_name);
                 self.active_screen = ActiveScreen::Main;
                 true
             }
@@ -333,14 +344,19 @@ impl PluginState {
                 } else if self.new_session_info.name().contains('/') {
                     self.set_error("Session name cannot contain '/'".to_string());
                 } else {
-                    self.new_session_info.handle_quick_session_creation(&self.current_session_name, &self.config.default_layout);
+                    self.new_session_info.handle_quick_session_creation(
+                        &self.current_session_name,
+                        &self.config.default_layout,
+                    );
                     self.active_screen = ActiveScreen::Main;
                 }
                 true
             }
             BareKey::Esc if key.has_no_modifiers() => {
                 // Special handling for Esc when entering session name - go back to main
-                if self.new_session_info.entering_new_session_name() && self.new_session_info.name().is_empty() {
+                if self.new_session_info.entering_new_session_name()
+                    && self.new_session_info.name().is_empty()
+                {
                     self.active_screen = ActiveScreen::Main;
                 } else {
                     // Let NewSessionInfo handle its own escape logic
@@ -428,33 +444,30 @@ impl PluginState {
     /// Handle item selection (Enter key)
     fn handle_item_selection(&mut self) {
         // Get the selected item data before any mutable borrows
-        let selected_item_data = self.selected_item().map(|item| {
-            match item {
-                SessionItem::ExistingSession { name, .. } => {
-                    (true, name, String::new())
-                }
-                SessionItem::Directory { session_name, path, .. } => {
-                    (false, session_name, path)
-                }
-                SessionItem::ResurrectableSession {name, ..} => {
-                    (true, name, String::new())
-                }
-            }
+        let selected_item_data = self.selected_item().map(|item| match item {
+            SessionItem::ExistingSession { name, .. } => (true, name, String::new()),
+            SessionItem::Directory {
+                session_name, path, ..
+            } => (false, session_name, path),
+            SessionItem::ResurrectableSession { name, .. } => (true, name, String::new()),
         });
 
         if let Some((is_session, name, path)) = selected_item_data {
             if is_session {
                 // Switch to existing session
-                self.session_manager.execute_action(SessionAction::Switch(name));
+                self.session_manager
+                    .execute_action(SessionAction::Switch(name));
                 hide_self();
             } else {
                 // Create new session with incremented name
-                let incremented_name = self.session_manager
+                let incremented_name = self
+                    .session_manager
                     .generate_incremented_name(&name, &self.config.session_separator);
-                
+
                 // Set up new session creation
                 self.new_session_info.set_name(&incremented_name);
-                self.new_session_info.set_folder(Some(std::path::PathBuf::from(&path)));
+                self.new_session_info
+                    .set_folder(Some(std::path::PathBuf::from(&path)));
                 self.new_session_info.advance_to_layout_selection();
                 self.active_screen = ActiveScreen::NewSession;
             }
@@ -464,11 +477,10 @@ impl PluginState {
     /// Handle delete key
     fn handle_delete_key(&mut self) {
         // Get the selected item data before any mutable borrows
-        let selected_session_name = self.selected_item().and_then(|item| {
-            match item {
-                SessionItem::ExistingSession { name, .. } => Some(name),
-                _ => None,
-            }
+        let selected_session_name = self.selected_item().and_then(|item| match item {
+            SessionItem::ExistingSession { name, .. } => Some(name),
+            SessionItem::ResurrectableSession { name, .. } => Some(name),
+            _ => None,
         });
 
         if let Some(session_name) = selected_session_name {
@@ -489,32 +501,33 @@ impl PluginState {
     fn launch_filepicker(&mut self) {
         use uuid::Uuid;
         use zellij_tile::prelude::{pipe_message_to_plugin, MessageToPlugin};
-        
+
         let request_id = Uuid::new_v4();
         let mut config = BTreeMap::new();
         let mut args = BTreeMap::new();
-        
+
         self.request_ids.push(request_id.to_string());
-        
+
         // we insert this into the config so that a new plugin will be opened (the plugin's
         // uniqueness is determined by its name/url as well as its config)
         config.insert("request_id".to_owned(), request_id.to_string());
-        
+
         // Start filepicker at the current session folder if set
         if let Some(folder) = self.new_session_info.new_session_folder() {
-            config.insert("caller_cwd".to_owned(), folder.to_string_lossy().to_string());
+            config.insert(
+                "caller_cwd".to_owned(),
+                folder.to_string_lossy().to_string(),
+            );
         }
-        
+
         // we also insert this into the args so that the plugin will have an easier access to it
         args.insert("request_id".to_owned(), request_id.to_string());
-        
+
         pipe_message_to_plugin(
             MessageToPlugin::new("filepicker")
                 .with_plugin_url("filepicker")
                 .with_plugin_config(config)
-                .new_plugin_instance_should_have_pane_title(
-                    "Select folder for the new session...",
-                )
+                .new_plugin_instance_should_have_pane_title("Select folder for the new session...")
                 .with_args(args),
         );
     }
@@ -537,7 +550,7 @@ impl PluginState {
     /// Handle quick session creation from main screen
     fn handle_quick_session_creation(&mut self) {
         use zellij_tile::prelude::{switch_session_with_cwd, switch_session_with_layout};
-        
+
         // Get the selected item data or search term
         let (session_name, session_folder) = if let Some(selected_item) = self.selected_item() {
             match selected_item {
@@ -552,8 +565,11 @@ impl PluginState {
                     hide_self();
                     return;
                 }
-                SessionItem::Directory { session_name, path, .. } => {
-                    let incremented_name = self.session_manager
+                SessionItem::Directory {
+                    session_name, path, ..
+                } => {
+                    let incremented_name = self
+                        .session_manager
                         .generate_incremented_name(&session_name, &self.config.session_separator);
                     (incremented_name, Some(std::path::PathBuf::from(path)))
                 }
@@ -583,15 +599,22 @@ impl PluginState {
         match &self.config.default_layout {
             Some(layout_name) => {
                 // Find the layout by name from current session's available layouts
-                if let Some(current_session) = self.session_manager.sessions().iter().find(|s| s.is_current_session) {
-                    let layout_info = current_session.available_layouts.iter()
+                if let Some(current_session) = self
+                    .session_manager
+                    .sessions()
+                    .iter()
+                    .find(|s| s.is_current_session)
+                {
+                    let layout_info = current_session
+                        .available_layouts
+                        .iter()
                         .find(|layout| layout.name() == layout_name)
                         .cloned();
-                    
+
                     match layout_info {
                         Some(layout) => {
                             switch_session_with_layout(Some(&session_name), layout, session_folder);
-                        },
+                        }
                         None => {
                             // Defined layout not found, create without layout
                             switch_session_with_cwd(Some(&session_name), session_folder);
@@ -601,7 +624,7 @@ impl PluginState {
                     // No current session info, cannot retrieve layouts, create without layout
                     switch_session_with_cwd(Some(&session_name), session_folder);
                 }
-            },
+            }
             None => {
                 // No default layout configured, create without layout
                 switch_session_with_cwd(Some(&session_name), session_folder);
