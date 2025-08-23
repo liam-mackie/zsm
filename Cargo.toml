@@ -1,6 +1,6 @@
 [package]
 name = "zsm"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["Liam Mackie <liam@mackie.sh>"]
 edition = "2021"
 description = "A Zellij plugin that integrates zoxide with session management for smart directory-based sessions"
