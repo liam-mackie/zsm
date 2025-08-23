@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/liam-mackie/zsm/compare/v0.3.1...v0.4.0) (2025-08-23)
+
+
+### 🚀 Features
+
+* add base_dirs to allow configurable base dir trimming ([#17](https://github.com/liam-mackie/zsm/issues/17)) ([7ee4b48](https://github.com/liam-mackie/zsm/commit/7ee4b48f3d8d11781efb3ecc81db32b30b4c61c3))
+
 ## [0.3.1](https://github.com/liam-mackie/zsm/compare/v0.3.0...v0.3.1) (2025-08-20)
 
 
