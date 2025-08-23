@@ -340,12 +340,50 @@ impl PluginState {
     }
 
     fn normalize_path(&self, path: &str) -> String {
-        // Remove home directory prefix if present
-        if let Some(home) = dirs::home_dir() {
-            if let Ok(relative) = std::path::Path::new(path).strip_prefix(&home) {
-                return relative.to_string_lossy().to_string();
+        let base_paths = &self.config().base_paths;
+        
+        // If no base paths configured, return the original path
+        if base_paths.is_empty() {
+            return path.to_string();
+        }
+
+        // Find the longest matching base path
+        let mut longest_match: Option<&String> = None;
+        let mut longest_match_len = 0;
+        
+        for base_path in base_paths {
+            // Normalize base path (remove trailing slash)
+            let normalized_base = base_path.trim_end_matches('/');
+            
+            // Check if path starts with this base path
+            if path.starts_with(normalized_base) {
+                // Make sure it's a directory boundary (not partial match)
+                if path.len() == normalized_base.len() || path.chars().nth(normalized_base.len()) == Some('/') {
+                    if normalized_base.len() > longest_match_len {
+                        longest_match = Some(base_path);
+                        longest_match_len = normalized_base.len();
+                    }
+                }
             }
         }
+        
+        if let Some(base_path) = longest_match {
+            let normalized_base = base_path.trim_end_matches('/');
+            
+            // If path exactly matches the base path, keep the full path
+            if path == normalized_base {
+                return path.to_string();
+            }
+            
+            // Strip the base path and the following slash
+            if let Some(stripped) = path.strip_prefix(normalized_base) {
+                let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
+                if !stripped.is_empty() {
+                    return stripped.to_string();
+                }
+            }
+        }
+        
         path.to_string()
     }
 

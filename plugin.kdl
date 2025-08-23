@@ -9,6 +9,13 @@ layout {
             //          "→" → g→project→subfolder
             //          "_" → g_project_subfolder
             // session_separator "."
+            
+            // Optional: Configure base paths for automatic session naming
+            // These paths will be stripped from directory names when generating session names
+            // Format: pipe-separated list of paths (use | as separator)
+            // Example: "/home/user" → "/home/user/projects/foo" becomes "projects.foo"
+            //          But "/home/user" itself stays as "/home/user" (exact matches keep full path)
+            // base_paths "/home/user|/Users/yourname/projects"
         }
     }
 }

@@ -82,6 +82,10 @@ keybinds clear-defaults=true {
                 
                 // Show sessions that can be resurrected
                 show_resurrectable_sessions true
+                
+                // Base paths to strip from directory names (pipe-separated)
+                // Example: "/home/user/projects/foo" becomes just "foo"
+                base_paths "/home/user/projects|/Users/dev/work"
             }
         }
     }
@@ -90,11 +94,12 @@ keybinds clear-defaults=true {
 
 ### Configuration Options
 
-| Option                        | Description                               | Default | Example         |
-|-------------------------------|-------------------------------------------|---------|-----------------|
-| `default_layout`              | Layout name for Ctrl+Enter quick creation | None    | `"development"` |
-| `session_separator`           | Character used in session names           | `"."`   | `"-"` or `"_"`  |
-| `show_resurrectable_sessions` | Show sessions that can be resurrected     | `false` | `true`          |
+| Option                        | Description                               | Default | Example                                 |
+|-------------------------------|-------------------------------------------|---------|-----------------------------------------|
+| `default_layout`              | Layout name for Ctrl+Enter quick creation | None    | `"development"`                         |
+| `session_separator`           | Character used in session names           | `"."`   | `"-"` or `"_"`                          |
+| `show_resurrectable_sessions` | Show sessions that can be resurrected     | `false` | `true`                                  |
+| `base_paths`                  | Base paths to strip from directory names (pipe-separated) | None    | `"/home/user\|/home/user/git/projects"` |
 
 ## 🎯 How It Works
 
@@ -117,6 +122,9 @@ ZSM automatically generates meaningful session names:
 - **Nested**: `~/projects/client/backend` → `client.backend`
 - **Conflicts**: Multiple "app" directories → `client.app`, `personal.app`
 - **Long names**: Intelligent abbreviation → `very-long-project-name` → `v-l-p-name`
+- **Base Paths**: Configure base paths to strip from names (e.g., `/home/user` as base path)
+  - `/home/user/projects/foo` → `projects.foo`
+  - `/home/user` → `/home/user` (exact matches keep full path)
 
 ### 3. Session Integration
 

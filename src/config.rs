@@ -9,6 +9,8 @@ pub struct Config {
     pub session_separator: String,
     /// Whether you'd like resurrectable sessions to be shown in the session list
     pub show_resurrectable_sessions: bool,
+    /// Base paths to strip from directory names when generating session names
+    pub base_paths: Vec<String>,
 }
 
 impl Default for Config {
@@ -17,6 +19,7 @@ impl Default for Config {
             default_layout: None,
             session_separator: ".".to_string(),
             show_resurrectable_sessions: false,
+            base_paths: Vec::new(),
         }
     }
 }
@@ -34,6 +37,16 @@ impl Config {
                 .get("show_resurrectable_sessions")
                 .map(|v| v == "true")
                 .unwrap_or(false),
+            base_paths: config
+                .get("base_paths")
+                .map(|paths| {
+                    paths
+                        .split('|')
+                        .map(|p| p.trim().to_string())
+                        .filter(|p| !p.is_empty())
+                        .collect()
+                })
+                .unwrap_or_else(Vec::new),
         }
     }
 }
