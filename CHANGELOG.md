@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/liam-mackie/zsm/compare/v0.4.0...v0.4.1) (2025-10-27)
+
+
+### 🐛 Bug Fixes
+
+* resolve issues with long session names ([#20](https://github.com/liam-mackie/zsm/issues/20)) ([1acd2ab](https://github.com/liam-mackie/zsm/commit/1acd2ab0a8cc00833306c0113cd9866da1b0f8e2))
+
 ## [0.4.0](https://github.com/liam-mackie/zsm/compare/v0.3.1...v0.4.0) (2025-08-23)
 
 
