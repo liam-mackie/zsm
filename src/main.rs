@@ -330,9 +330,12 @@ impl PluginState {
         let final_segments = &segments[segments.len().saturating_sub(required_segments)..];
         let mut session_name = final_segments.join(separator);
 
-        // Apply truncation if name is too long (zellij has 108 byte limit)
-        if session_name.len() > 100 {
-            // Leave some margin
+        // Zellij session names depend on the location of the socket
+        // Currently, the length limit is 108 bytes for Unix domain sockets
+        // The name of the session + the socket path must fit within this limit
+        // Since we run in a WASM runtime, there's no way to programmatically get the socket path
+        // therefore, we enforce a name length of ~29 characters to stay safe
+        if session_name.len() > 29 {
             session_name = self.apply_smart_truncation(&segments, required_segments);
         }
 
@@ -389,6 +392,8 @@ impl PluginState {
 
     fn apply_smart_truncation(&self, segments: &[&str], min_segments: usize) -> String {
         let separator = &self.config().session_separator;
+        let max_length = 29;
+        eprintln!("Applying smart truncation for segments: {:?} with min_segments: {}", segments, min_segments);
 
         // Start with minimum required segments from the right
         let mut result_segments: Vec<String> = segments
@@ -398,19 +403,43 @@ impl PluginState {
             .collect();
         let mut current_length = result_segments.join(separator).len();
 
+        // If the initial segments are already too long, truncate them
+        if current_length > max_length {
+            // Try abbreviating all segments first
+            result_segments = result_segments
+                .iter()
+                .map(|s| self.abbreviate_segment(s))
+                .collect();
+            current_length = result_segments.join(separator).len();
+
+            // If still too long, truncate individual segments or remove from left
+            while current_length > max_length && result_segments.len() > 1 {
+                result_segments.remove(0);
+                current_length = result_segments.join(separator).len();
+            }
+
+            // If still too long with just one segment, truncate it
+            if current_length > max_length && result_segments.len() == 1 {
+                let sep_len = if result_segments.len() > 1 { separator.len() } else { 0 };
+                let available = max_length.saturating_sub(sep_len);
+                result_segments[0].truncate(available);
+                current_length = result_segments.join(separator).len();
+            }
+        }
+
         // Try to add more segments from the left, abbreviating as needed
         let mut left_index = segments.len().saturating_sub(min_segments + 1);
 
-        while current_length < 90 && left_index > 0 {
-            // Leave room for separator and abbreviations
+        while current_length < max_length && left_index > 0 {
             let segment = segments[left_index];
             let abbreviated = self.abbreviate_segment(segment);
 
             let mut test_segments = vec![abbreviated.clone()];
             test_segments.extend(result_segments.clone());
             let test_length = test_segments.join(separator).len();
+            eprintln!("test_length with segment '{}': {}", segment, test_length);
 
-            if test_length <= 90 {
+            if test_length <= max_length {
                 result_segments.insert(0, abbreviated);
                 current_length = test_length;
                 left_index = left_index.saturating_sub(1);
@@ -419,7 +448,13 @@ impl PluginState {
             }
         }
 
-        result_segments.join(separator)
+        // Final safety check - ensure we're at or under max_length
+        let mut final_result = result_segments.join(separator);
+        if final_result.len() > max_length {
+            final_result.truncate(max_length);
+        }
+
+        final_result
     }
 
     fn abbreviate_segment(&self, segment: &str) -> String {
