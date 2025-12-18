@@ -21,9 +21,9 @@ build:
 release:
 	cargo build --target $(TARGET) --release
 
-# Run tests (on native target, not WASM)
+# Run tests (native target, library only)
 test:
-	cargo test --target $$(rustc -vV | sed -n 's/host: //p')
+	cargo test --lib
 
 # Clean build artifacts
 clean:

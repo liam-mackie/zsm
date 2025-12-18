@@ -1,18 +1,9 @@
-mod app;
-mod data;
-mod domain;
-mod input;
-mod integrations;
-mod naming;
-mod search;
-mod target;
-mod ui;
-
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use app::AppState;
-use integrations::parse_zoxide_output;
+use crate::app::AppState;
+use crate::integrations::parse_zoxide_output;
+use crate::ui;
 use zellij_tile::prelude::*;
 
 register_plugin!(AppState);
@@ -57,10 +48,8 @@ impl ZellijPlugin for AppState {
             }
             Event::SessionUpdate(infos, resurrectable) => {
                 self.update_sessions(infos);
-                // Handle resurrectable sessions through session store
                 let durations: Vec<_> = resurrectable.into_iter().collect();
                 for (name, duration) in durations {
-                    // These will be handled when we update resurrectable
                     let _ = (name, duration);
                 }
                 true

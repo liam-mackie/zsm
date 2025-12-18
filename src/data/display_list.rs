@@ -89,11 +89,22 @@ fn is_incremented_version(session_name: &str, base_name: &str, separator: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::Directory;
+    use crate::naming::SessionNameGenerator;
+    use std::time::Duration;
+
+    fn make_generator() -> SessionNameGenerator {
+        SessionNameGenerator::new(".".to_string(), vec![])
+    }
+
+    fn setup_stores() -> (SessionStore, DirectoryStore) {
+        (SessionStore::default(), DirectoryStore::default())
+    }
 
     #[test]
     fn is_incremented_matches_suffix() {
         assert!(is_incremented_version("project.2", "project", "."));
-        assert!(is_incremented_version("project.. 100", "project", "."));
+        assert!(is_incremented_version("project.100", "project", "."));
     }
 
     #[test]
@@ -105,5 +116,126 @@ mod tests {
     #[test]
     fn is_incremented_rejects_different_base() {
         assert!(!is_incremented_version("other.2", "project", "."));
+    }
+
+    #[test]
+    fn is_incremented_rejects_shorter() {
+        assert!(!is_incremented_version("pro", "project", "."));
+    }
+
+    #[test]
+    fn is_incremented_rejects_equal_length() {
+        assert!(!is_incremented_version("project", "project", "."));
+    }
+
+    #[test]
+    fn is_incremented_rejects_missing_separator() {
+        assert!(!is_incremented_version("project2", "project", "."));
+    }
+
+    #[test]
+    fn build_empty_stores() {
+        let (sessions, directories) = setup_stores();
+        let items = DisplayList::build(&sessions, &directories, false, ".");
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn build_sessions_only() {
+        let (mut sessions, directories) = setup_stores();
+        sessions.update(vec![
+            zellij_tile::prelude::SessionInfo {
+                name: "session1".to_string(),
+                is_current_session: true,
+                ..Default::default()
+            },
+            zellij_tile::prelude::SessionInfo {
+                name: "session2".to_string(),
+                is_current_session: false,
+                ..Default::default()
+            },
+        ]);
+        let items = DisplayList::build(&sessions, &directories, false, ".");
+        assert_eq!(items.len(), 2);
+        assert!(matches!(&items[0], DisplayItem::ExistingSession { name, is_current, .. } if name == "session1" && *is_current));
+    }
+
+    #[test]
+    fn build_directories_only() {
+        let (sessions, mut directories) = setup_stores();
+        let dirs = vec![Directory {
+            path: "/home/user/project".to_string(),
+            ranking: 100.0,
+            session_name: String::new(),
+        }];
+        directories.update(dirs, &make_generator());
+        let items = DisplayList::build(&sessions, &directories, false, ".");
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], DisplayItem::Directory { path, .. } if path == "/home/user/project"));
+    }
+
+    #[test]
+    fn build_includes_resurrectable_when_enabled() {
+        let (mut sessions, directories) = setup_stores();
+        sessions.update_resurrectable(vec![("dead".to_string(), Duration::from_secs(3600))]);
+        let items = DisplayList::build(&sessions, &directories, true, ".");
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], DisplayItem::ResurrectableSession { name, .. } if name == "dead"));
+    }
+
+    #[test]
+    fn build_excludes_resurrectable_when_disabled() {
+        let (mut sessions, directories) = setup_stores();
+        sessions.update_resurrectable(vec![("dead".to_string(), Duration::from_secs(3600))]);
+        let items = DisplayList::build(&sessions, &directories, false, ".");
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn build_matches_session_to_directory() {
+        let (mut sessions, mut directories) = setup_stores();
+        sessions.update(vec![zellij_tile::prelude::SessionInfo {
+            name: "project".to_string(),
+            is_current_session: false,
+            ..Default::default()
+        }]);
+        directories.update(
+            vec![Directory {
+                path: "/home/user/project".to_string(),
+                ranking: 100.0,
+                session_name: String::new(),
+            }],
+            &make_generator(),
+        );
+        let items = DisplayList::build(&sessions, &directories, false, ".");
+        if let DisplayItem::ExistingSession { directory, .. } = &items[0] {
+            assert_eq!(directory.as_deref(), Some("/home/user/project"));
+        } else {
+            panic!("Expected ExistingSession");
+        }
+    }
+
+    #[test]
+    fn build_matches_incremented_session() {
+        let (mut sessions, mut directories) = setup_stores();
+        sessions.update(vec![zellij_tile::prelude::SessionInfo {
+            name: "project.2".to_string(),
+            is_current_session: false,
+            ..Default::default()
+        }]);
+        directories.update(
+            vec![Directory {
+                path: "/home/user/project".to_string(),
+                ranking: 100.0,
+                session_name: String::new(),
+            }],
+            &make_generator(),
+        );
+        let items = DisplayList::build(&sessions, &directories, false, ".");
+        if let DisplayItem::ExistingSession { directory, .. } = &items[0] {
+            assert_eq!(directory.as_deref(), Some("/home/user/project"));
+        } else {
+            panic!("Expected ExistingSession");
+        }
     }
 }

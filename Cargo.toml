@@ -10,6 +10,11 @@ keywords = ["zellij", "plugin", "zoxide", "session", "wasm"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
 
+[lib]
+name = "zsm"
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 zellij-tile = "0.43.1"
 serde = { version = "1.0.164", features = ["derive"] }

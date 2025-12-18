@@ -95,3 +95,231 @@ impl Default for InputContext {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    fn key(bare: BareKey) -> KeyWithModifier {
+        KeyWithModifier::new(bare)
+    }
+
+    fn char_key(c: char) -> KeyWithModifier {
+        KeyWithModifier::new(BareKey::Char(c))
+    }
+
+    fn ctrl_key(c: char) -> KeyWithModifier {
+        KeyWithModifier::new_with_modifiers(
+            BareKey::Char(c),
+            BTreeSet::from([KeyModifier::Ctrl]),
+        )
+    }
+
+    fn ctrl_enter() -> KeyWithModifier {
+        KeyWithModifier::new_with_modifiers(BareKey::Enter, BTreeSet::from([KeyModifier::Ctrl]))
+    }
+
+    // Main screen navigation tests
+    #[test]
+    fn arrow_up_navigates_up() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Up), Screen::Main, &context);
+        assert_eq!(action, Action::Navigate(Direction::Up));
+    }
+
+    #[test]
+    fn arrow_down_navigates_down() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Down), Screen::Main, &context);
+        assert_eq!(action, Action::Navigate(Direction::Down));
+    }
+
+    #[test]
+    fn enter_selects() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Enter), Screen::Main, &context);
+        assert_eq!(action, Action::Select);
+    }
+
+    #[test]
+    fn ctrl_enter_quick_creates() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(ctrl_enter(), Screen::Main, &context);
+        assert_eq!(action, Action::QuickCreate);
+    }
+
+    #[test]
+    fn delete_starts_deletion() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Delete), Screen::Main, &context);
+        assert_eq!(action, Action::Delete);
+    }
+
+    // Search input tests
+    #[test]
+    fn char_input_adds_to_search() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(char_key('a'), Screen::Main, &context);
+        assert_eq!(action, Action::Search(SearchAction::AddChar('a')));
+    }
+
+    #[test]
+    fn backspace_removes_from_search() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Backspace), Screen::Main, &context);
+        assert_eq!(action, Action::Search(SearchAction::Backspace));
+    }
+
+    #[test]
+    fn escape_clears_search_when_searching() {
+        let context = InputContext {
+            is_searching: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(key(BareKey::Esc), Screen::Main, &context);
+        assert_eq!(action, Action::Search(SearchAction::Clear));
+    }
+
+    #[test]
+    fn escape_hides_when_not_searching() {
+        let context = InputContext {
+            is_searching: false,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(key(BareKey::Esc), Screen::Main, &context);
+        assert_eq!(action, Action::Hide);
+    }
+
+    #[test]
+    fn ctrl_c_hides() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(ctrl_key('c'), Screen::Main, &context);
+        assert_eq!(action, Action::Hide);
+    }
+
+    #[test]
+    fn ctrl_r_refreshes() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(ctrl_key('r'), Screen::Main, &context);
+        assert_eq!(action, Action::Refresh);
+    }
+
+    // Deletion confirmation tests
+    #[test]
+    fn y_confirms_deletion() {
+        let context = InputContext {
+            has_pending_deletion: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(char_key('y'), Screen::Main, &context);
+        assert_eq!(action, Action::ConfirmDelete);
+    }
+
+    #[test]
+    fn uppercase_y_confirms_deletion() {
+        let context = InputContext {
+            has_pending_deletion: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(char_key('Y'), Screen::Main, &context);
+        assert_eq!(action, Action::ConfirmDelete);
+    }
+
+    #[test]
+    fn n_cancels_deletion() {
+        let context = InputContext {
+            has_pending_deletion: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(char_key('n'), Screen::Main, &context);
+        assert_eq!(action, Action::CancelDelete);
+    }
+
+    #[test]
+    fn escape_cancels_deletion() {
+        let context = InputContext {
+            has_pending_deletion: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(key(BareKey::Esc), Screen::Main, &context);
+        assert_eq!(action, Action::CancelDelete);
+    }
+
+    #[test]
+    fn deletion_mode_ignores_navigation() {
+        let context = InputContext {
+            has_pending_deletion: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(key(BareKey::Down), Screen::Main, &context);
+        assert_eq!(action, Action::None);
+    }
+
+    #[test]
+    fn deletion_mode_ignores_other_chars() {
+        let context = InputContext {
+            has_pending_deletion: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(char_key('x'), Screen::Main, &context);
+        assert_eq!(action, Action::None);
+    }
+
+    // NewSession screen tests
+    #[test]
+    fn new_session_enter_selects() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Enter), Screen::NewSession, &context);
+        assert_eq!(action, Action::Select);
+    }
+
+    #[test]
+    fn new_session_ctrl_f_opens_filepicker() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(ctrl_key('f'), Screen::NewSession, &context);
+        assert_eq!(action, Action::OpenFilepicker);
+    }
+
+    #[test]
+    fn new_session_ctrl_c_clears_folder() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(ctrl_key('c'), Screen::NewSession, &context);
+        assert_eq!(action, Action::ClearFolder);
+    }
+
+    #[test]
+    fn new_session_escape_with_empty_name_goes_to_main() {
+        let context = InputContext {
+            session_name_empty: true,
+            entering_name: true,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(key(BareKey::Esc), Screen::NewSession, &context);
+        assert_eq!(action, Action::GoToScreen(Screen::Main));
+    }
+
+    #[test]
+    fn new_session_escape_during_layout_clears_search() {
+        let context = InputContext {
+            entering_name: false,
+            ..Default::default()
+        };
+        let action = InputHandler::handle(key(BareKey::Esc), Screen::NewSession, &context);
+        assert_eq!(action, Action::Search(SearchAction::Clear));
+    }
+
+    #[test]
+    fn new_session_navigation_works() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(key(BareKey::Up), Screen::NewSession, &context);
+        assert_eq!(action, Action::Navigate(Direction::Up));
+    }
+
+    #[test]
+    fn new_session_char_adds_to_search() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(char_key('t'), Screen::NewSession, &context);
+        assert_eq!(action, Action::Search(SearchAction::AddChar('t')));
+    }
+}

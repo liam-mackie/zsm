@@ -66,3 +66,107 @@ impl Config {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_config() {
+        let config = Config::default();
+        assert_eq!(config.mode, TargetMode::Session);
+        assert_eq!(config.session_separator, ".");
+        assert!(!config.show_resurrectable_sessions);
+        assert!(config.base_paths.is_empty());
+        assert!(config.default_layout.is_none());
+    }
+
+    #[test]
+    fn target_mode_from_str_tab() {
+        assert_eq!(TargetMode::from_str("tab"), TargetMode::Tab);
+        assert_eq!(TargetMode::from_str("TAB"), TargetMode::Tab);
+        assert_eq!(TargetMode::from_str("Tab"), TargetMode::Tab);
+    }
+
+    #[test]
+    fn target_mode_from_str_session() {
+        assert_eq!(TargetMode::from_str("session"), TargetMode::Session);
+        assert_eq!(TargetMode::from_str("unknown"), TargetMode::Session);
+        assert_eq!(TargetMode::from_str(""), TargetMode::Session);
+    }
+
+    #[test]
+    fn from_zellij_config_parses_mode() {
+        let mut map = BTreeMap::new();
+        map.insert("mode".to_string(), "tab".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert_eq!(config.mode, TargetMode::Tab);
+    }
+
+    #[test]
+    fn from_zellij_config_parses_separator() {
+        let mut map = BTreeMap::new();
+        map.insert("session_separator".to_string(), "-".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert_eq!(config.session_separator, "-");
+    }
+
+    #[test]
+    fn from_zellij_config_parses_default_layout() {
+        let mut map = BTreeMap::new();
+        map.insert("default_layout".to_string(), "compact".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert_eq!(config.default_layout, Some("compact".to_string()));
+    }
+
+    #[test]
+    fn from_zellij_config_parses_resurrectable_true() {
+        let mut map = BTreeMap::new();
+        map.insert("show_resurrectable_sessions".to_string(), "true".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert!(config.show_resurrectable_sessions);
+    }
+
+    #[test]
+    fn from_zellij_config_parses_resurrectable_false() {
+        let mut map = BTreeMap::new();
+        map.insert("show_resurrectable_sessions".to_string(), "false".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert!(!config.show_resurrectable_sessions);
+    }
+
+    #[test]
+    fn from_zellij_config_parses_base_paths() {
+        let mut map = BTreeMap::new();
+        map.insert("base_paths".to_string(), "/home/user|/work".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert_eq!(config.base_paths, vec!["/home/user", "/work"]);
+    }
+
+    #[test]
+    fn from_zellij_config_handles_empty_base_paths() {
+        let mut map = BTreeMap::new();
+        map.insert("base_paths".to_string(), "".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert!(config.base_paths.is_empty());
+    }
+
+    #[test]
+    fn from_zellij_config_trims_base_paths() {
+        let mut map = BTreeMap::new();
+        map.insert("base_paths".to_string(), " /home/user | /work ".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert_eq!(config.base_paths, vec!["/home/user", "/work"]);
+    }
+
+    #[test]
+    fn from_zellij_config_empty_map() {
+        let map = BTreeMap::new();
+        let config = Config::from_zellij_config(&map);
+        assert_eq!(config.mode, TargetMode::Session);
+        assert_eq!(config.session_separator, ".");
+        assert!(!config.show_resurrectable_sessions);
+        assert!(config.base_paths.is_empty());
+        assert!(config.default_layout.is_none());
+    }
+}

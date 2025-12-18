@@ -460,3 +460,243 @@ impl AppState {
         true
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::Directory;
+    use crate::target::MockTarget;
+
+    fn make_app_with_mock() -> (AppState, MockTarget) {
+        let mock = MockTarget::new();
+        let mut state = AppState::default();
+        state.target = Box::new(mock.clone());
+        (state, mock)
+    }
+
+    fn make_session_info(name: &str, is_current: bool) -> SessionInfo {
+        SessionInfo {
+            name: name.to_string(),
+            is_current_session: is_current,
+            ..Default::default()
+        }
+    }
+
+    fn make_directory(path: &str, ranking: f64) -> Directory {
+        Directory {
+            path: path.to_string(),
+            ranking,
+            session_name: String::new(),
+        }
+    }
+
+    // Screen and initialization tests
+    #[test]
+    fn default_screen_is_main() {
+        let state = AppState::default();
+        assert_eq!(state.screen(), Screen::Main);
+    }
+
+    #[test]
+    fn initialize_sets_config() {
+        let mut state = AppState::default();
+        let mut config = BTreeMap::new();
+        config.insert("session_separator".to_string(), "-".to_string());
+        state.initialize(config);
+        assert_eq!(state.config().session_separator, "-");
+    }
+
+    // Navigation tests
+    #[test]
+    fn navigate_down_updates_selection() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("s1", false),
+            make_session_info("s2", false),
+        ]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        assert_eq!(state.selected_index(), Some(0));
+        state.apply_action(Action::Navigate(Direction::Down));
+        assert_eq!(state.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn navigate_up_updates_selection() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("s1", false),
+            make_session_info("s2", false),
+        ]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Navigate(Direction::Up));
+        assert_eq!(state.selected_index(), Some(0));
+    }
+
+    // Selection tests
+    #[test]
+    fn selecting_session_switches_and_hides() {
+        let (mut state, mock) = make_app_with_mock();
+        state.update_sessions(vec![make_session_info("target-session", false)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Select);
+        assert_eq!(mock.switched_to_sessions(), vec!["target-session"]);
+        assert_eq!(mock.hide_count(), 1);
+    }
+
+    #[test]
+    fn selecting_directory_goes_to_new_session_screen() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_directories(vec![make_directory("/home/user/project", 100.0)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Select);
+        assert_eq!(state.screen(), Screen::NewSession);
+        assert!(!state.new_session_name().is_empty());
+    }
+
+    // Deletion tests
+    #[test]
+    fn delete_action_starts_pending_deletion() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![make_session_info("to-delete", false)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Delete);
+        assert_eq!(state.sessions().pending_deletion(), Some("to-delete"));
+    }
+
+    #[test]
+    fn confirm_delete_calls_target_delete() {
+        let (mut state, mock) = make_app_with_mock();
+        state.update_sessions(vec![make_session_info("to-delete", false)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Delete);
+        state.apply_action(Action::ConfirmDelete);
+        assert_eq!(mock.deleted_sessions(), vec!["to-delete"]);
+    }
+
+    #[test]
+    fn cancel_delete_clears_pending() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![make_session_info("to-delete", false)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Delete);
+        state.apply_action(Action::CancelDelete);
+        assert!(state.sessions().pending_deletion().is_none());
+    }
+
+    // Search tests
+    #[test]
+    fn search_filters_display_items() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("project", false),
+            make_session_info("other", false),
+        ]);
+        state.apply_action(Action::Search(SearchAction::AddChar('p')));
+        assert!(state.search().is_active());
+        let items = state.display_items();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].display_name(), "project");
+    }
+
+    #[test]
+    fn search_clear_resets() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![make_session_info("test", false)]);
+        state.apply_action(Action::Search(SearchAction::AddChar('t')));
+        assert!(state.search().is_active());
+        state.apply_action(Action::Search(SearchAction::Clear));
+        assert!(!state.search().is_active());
+    }
+
+    // Screen transition tests
+    #[test]
+    fn go_to_screen_changes_screen() {
+        let (mut state, _) = make_app_with_mock();
+        assert_eq!(state.screen(), Screen::Main);
+        state.apply_action(Action::GoToScreen(Screen::NewSession));
+        assert_eq!(state.screen(), Screen::NewSession);
+    }
+
+    #[test]
+    fn go_to_main_clears_new_session_state() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_directories(vec![make_directory("/home/test", 100.0)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Select);
+        assert_eq!(state.screen(), Screen::NewSession);
+        assert!(!state.new_session_name().is_empty());
+        state.apply_action(Action::GoToScreen(Screen::Main));
+        assert_eq!(state.screen(), Screen::Main);
+        assert!(state.new_session_name().is_empty());
+    }
+
+    // Hide test
+    #[test]
+    fn hide_calls_target_hide() {
+        let (mut state, mock) = make_app_with_mock();
+        state.apply_action(Action::Hide);
+        assert_eq!(mock.hide_count(), 1);
+    }
+
+    // Quick create tests
+    #[test]
+    fn quick_create_on_directory_creates_session() {
+        let (mut state, mock) = make_app_with_mock();
+        state.update_directories(vec![make_directory("/home/user/project", 100.0)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::QuickCreate);
+        let created = mock.created_sessions();
+        assert_eq!(created.len(), 1);
+        assert_eq!(created[0].0, "project");
+        assert_eq!(mock.hide_count(), 1);
+    }
+
+    // Display items tests
+    #[test]
+    fn display_items_combines_sessions_and_directories() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![make_session_info("session1", true)]);
+        state.update_directories(vec![make_directory("/home/dir", 100.0)]);
+        let items = state.display_items();
+        assert_eq!(items.len(), 2);
+    }
+
+    // Error handling tests
+    #[test]
+    fn set_error_stores_error() {
+        let (mut state, _) = make_app_with_mock();
+        state.set_error("Test error".to_string());
+        assert_eq!(state.error(), Some("Test error"));
+    }
+
+    #[test]
+    fn handle_key_clears_error() {
+        let (mut state, _) = make_app_with_mock();
+        state.set_error("Test error".to_string());
+        state.handle_key(zellij_tile::prelude::KeyWithModifier::new(
+            zellij_tile::prelude::BareKey::Esc,
+        ));
+        assert!(state.error().is_none());
+    }
+
+    // Selected item tests
+    #[test]
+    fn selected_item_returns_correct() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("first", false),
+            make_session_info("second", false),
+        ]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        let selected = state.selected_item();
+        assert!(selected.is_some());
+        assert_eq!(selected.unwrap().display_name(), "first");
+    }
+
+    #[test]
+    fn selected_item_none_when_empty() {
+        let state = AppState::default();
+        assert!(state.selected_item().is_none());
+    }
+}

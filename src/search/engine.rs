@@ -136,3 +136,174 @@ impl SearchEngine {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn make_session(name: &str) -> DisplayItem {
+        DisplayItem::ExistingSession {
+            name: name.to_string(),
+            directory: None,
+            is_current: false,
+        }
+    }
+
+    fn make_directory(path: &str, session_name: &str) -> DisplayItem {
+        DisplayItem::Directory {
+            path: path.to_string(),
+            session_name: session_name.to_string(),
+        }
+    }
+
+    fn make_resurrectable(name: &str) -> DisplayItem {
+        DisplayItem::ResurrectableSession {
+            name: name.to_string(),
+            duration: Duration::from_secs(3600),
+        }
+    }
+
+    #[test]
+    fn empty_search_returns_empty_results() {
+        let engine = SearchEngine::default();
+        assert!(engine.results().is_empty());
+        assert!(!engine.is_active());
+    }
+
+    #[test]
+    fn search_without_term_clears_results() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("project")];
+        engine.search(&items);
+        assert!(engine.results().is_empty());
+    }
+
+    #[test]
+    fn search_finds_matching_session() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("project"), make_session("other")];
+        engine.add_char('p', &items);
+        engine.add_char('r', &items);
+        assert_eq!(engine.results().len(), 1);
+        assert_eq!(engine.results()[0].item.display_name(), "project");
+    }
+
+    #[test]
+    fn search_finds_matching_directory() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_directory("/home/user/project", "project")];
+        engine.add_char('h', &items);
+        engine.add_char('o', &items);
+        engine.add_char('m', &items);
+        assert_eq!(engine.results().len(), 1);
+    }
+
+    #[test]
+    fn fuzzy_matching_works() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("my-project")];
+        engine.add_char('m', &items);
+        engine.add_char('p', &items);
+        assert_eq!(engine.results().len(), 1);
+    }
+
+    #[test]
+    fn sessions_ranked_above_directories() {
+        let mut engine = SearchEngine::default();
+        let items = vec![
+            make_directory("/home/project", "project"),
+            make_session("project"),
+        ];
+        engine.add_char('p', &items);
+        assert!(engine.results()[0].item.is_session());
+    }
+
+    #[test]
+    fn backspace_updates_results() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("abc"), make_session("xyz")];
+        engine.add_char('x', &items);
+        assert_eq!(engine.results().len(), 1);
+        engine.backspace(&items);
+        assert!(engine.results().is_empty());
+        assert!(!engine.is_active());
+    }
+
+    #[test]
+    fn clear_resets_state() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("test")];
+        engine.add_char('t', &items);
+        assert!(engine.is_active());
+        engine.clear();
+        assert!(!engine.is_active());
+        assert!(engine.results().is_empty());
+        assert_eq!(engine.term(), "");
+    }
+
+    #[test]
+    fn selection_auto_selects_first() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("aaa"), make_session("aab")];
+        engine.add_char('a', &items);
+        assert_eq!(engine.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn move_down_updates_selection() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("aa"), make_session("ab"), make_session("ac")];
+        engine.add_char('a', &items);
+        engine.move_down();
+        assert_eq!(engine.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn move_up_updates_selection() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("aa"), make_session("ab"), make_session("ac")];
+        engine.add_char('a', &items);
+        engine.move_down();
+        engine.move_down();
+        engine.move_up();
+        assert_eq!(engine.selected_index(), Some(1));
+    }
+
+    #[test]
+    fn selected_item_returns_correct_item() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("first"), make_session("second")];
+        engine.add_char('f', &items);
+        assert_eq!(engine.selected_item().unwrap().display_name(), "first");
+    }
+
+    #[test]
+    fn search_matches_resurrectable_sessions() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_resurrectable("dead-project")];
+        engine.add_char('d', &items);
+        engine.add_char('e', &items);
+        assert_eq!(engine.results().len(), 1);
+    }
+
+    #[test]
+    fn no_match_returns_empty() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("project")];
+        engine.add_char('x', &items);
+        engine.add_char('y', &items);
+        engine.add_char('z', &items);
+        assert!(engine.results().is_empty());
+    }
+
+    #[test]
+    fn term_accumulates_characters() {
+        let mut engine = SearchEngine::default();
+        let items: Vec<DisplayItem> = vec![];
+        engine.add_char('a', &items);
+        engine.add_char('b', &items);
+        engine.add_char('c', &items);
+        assert_eq!(engine.term(), "abc");
+    }
+}

@@ -2,9 +2,15 @@ mod session;
 mod tab;
 mod traits;
 
+#[cfg(test)]
+mod mock;
+
 pub use session::SessionTarget;
 pub use tab::TabTarget;
 pub use traits::Target;
+
+#[cfg(test)]
+pub use mock::MockTarget;
 
 use crate::domain::TargetMode;
 
