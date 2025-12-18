@@ -1,0 +1,29 @@
+layout {
+    cwd "~/g/zsm/"
+    tab name="Debug" {
+        pane size=1 borderless=true {
+            plugin location="tab-bar"
+        }
+        pane size="80%" split_direction="vertical" {
+            // Left: Plugin under development (60%)
+            pane size="60%" {
+                plugin location="file:target/wasm32-wasip1/debug/zsm.wasm"
+            }
+            // Right: Build logs with auto-rebuild (40%)
+            pane size="40%" {
+                name "build"
+                command "make"
+                args "watch"
+            }
+        }
+        // Bottom: Zellij logs
+        pane size="20%" {
+            name "logs"
+            command "zsh"
+            args "-c" "tail -f -n100 $(find /private/var/folders -name zellij.log 2>/dev/null | head -1)"
+        }
+        pane size=1 borderless=true {
+            plugin location="status-bar"
+        }
+    }
+}

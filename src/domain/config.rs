@@ -1,21 +1,34 @@
 use std::collections::BTreeMap;
 
-/// Plugin configuration loaded from Zellij layout
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TargetMode {
+    #[default]
+    Session,
+    Tab,
+}
+
+impl TargetMode {
+    fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "tab" => Self::Tab,
+            _ => Self::Session,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Config {
-    /// Default layout for quick session creation with Ctrl+Enter
+    pub mode: TargetMode,
     pub default_layout: Option<String>,
-    /// Separator used in session names (default: ".")
     pub session_separator: String,
-    /// Whether you'd like resurrectable sessions to be shown in the session list
     pub show_resurrectable_sessions: bool,
-    /// Base paths to strip from directory names when generating session names
     pub base_paths: Vec<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            mode: TargetMode::default(),
             default_layout: None,
             session_separator: ".".to_string(),
             show_resurrectable_sessions: false,
@@ -25,9 +38,12 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Create configuration from Zellij plugin configuration
     pub fn from_zellij_config(config: &BTreeMap<String, String>) -> Self {
         Self {
+            mode: config
+                .get("mode")
+                .map(|m| TargetMode::from_str(m))
+                .unwrap_or_default(),
             default_layout: config.get("default_layout").cloned(),
             session_separator: config
                 .get("session_separator")
@@ -46,7 +62,7 @@ impl Config {
                         .filter(|p| !p.is_empty())
                         .collect()
                 })
-                .unwrap_or_else(Vec::new),
+                .unwrap_or_default(),
         }
     }
 }
