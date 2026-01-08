@@ -326,7 +326,7 @@ impl PluginRenderer {
             "If this is a resurrectable session, it will be deleted. This action cannot be undone.";
         let prompt = "Press 'y' to confirm, 'n' or Esc to cancel";
 
-        let dialog_lines = vec![
+        let dialog_lines = [
             "┌".to_string() + &"─".repeat(dialog_width.saturating_sub(2)) + "┐",
             format!(
                 "│{:^width$}│",

@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 use zellij_tile::prelude::*;
 
@@ -8,6 +8,7 @@ use crate::session::{SessionAction, SessionItem, SessionManager};
 use crate::zoxide::{SearchEngine, ZoxideDirectory};
 
 /// The main plugin state
+#[derive(Default)]
 pub struct PluginState {
     /// Plugin configuration
     config: Config,
@@ -34,36 +35,13 @@ pub struct PluginState {
 }
 
 /// Represents the different screens in the plugin
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ActiveScreen {
     /// Main screen showing zoxide directories and sessions
+    #[default]
     Main,
     /// New session creation screen
     NewSession,
-}
-
-impl Default for ActiveScreen {
-    fn default() -> Self {
-        ActiveScreen::Main
-    }
-}
-
-impl Default for PluginState {
-    fn default() -> Self {
-        Self {
-            config: Config::default(),
-            session_manager: SessionManager::default(),
-            zoxide_directories: Vec::new(),
-            search_engine: SearchEngine::default(),
-            new_session_info: NewSessionInfo::default(),
-            active_screen: ActiveScreen::default(),
-            error: None,
-            colors: None,
-            current_session_name: None,
-            request_ids: Vec::new(),
-            selected_index: None,
-        }
-    }
 }
 
 impl PluginState {
@@ -72,9 +50,10 @@ impl PluginState {
         self.config = Config::from_zellij_config(&configuration);
     }
 
-    /// Update session information
-    pub fn update_sessions(&mut self, sessions: Vec<SessionInfo>) {
-        // Store current session name
+    /// Update session information with stability tracking
+    /// Returns true if the session list actually changed
+    pub fn update_sessions(&mut self, sessions: Vec<SessionInfo>) -> bool {
+        // Store current session name and layouts from the incoming data
         for session in &sessions {
             if session.is_current_session {
                 self.current_session_name = Some(session.name.clone());
@@ -84,18 +63,27 @@ impl PluginState {
             }
         }
 
-        self.session_manager.update_sessions(sessions);
-        self.update_search_if_needed();
+        // Use stable update that handles Zellij's inconsistent data
+        let changed = self.session_manager.update_sessions_stable(sessions);
+        if changed {
+            self.update_search_if_needed();
+        }
+        changed
     }
 
     /// Update session information for resurrectable sessions
+    /// Returns true if the resurrectable session list actually changed
     pub fn update_resurrectable_sessions(
         &mut self,
         resurrectable_sessions: Vec<(String, Duration)>,
-    ) {
-        self.session_manager
-            .update_resurrectable_sessions(resurrectable_sessions);
-        self.update_search_if_needed();
+    ) -> bool {
+        let changed = self
+            .session_manager
+            .update_resurrectable_stable(resurrectable_sessions);
+        if changed {
+            self.update_search_if_needed();
+        }
+        changed
     }
 
     /// Update zoxide directories (managed separately from sessions)
@@ -149,40 +137,42 @@ impl PluginState {
     /// Combine sessions and zoxide directories for display
     fn combined_items(&self) -> Vec<SessionItem> {
         let mut items = Vec::new();
+        let mut added_session_names = HashSet::new();
 
         // First, add existing sessions that match zoxide directories (including incremented ones)
         for session in self.session_manager.sessions() {
-            // Check if this session name matches any generated session name from zoxide directories
-            for zoxide_dir in &self.zoxide_directories {
-                // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
-                if session.name == zoxide_dir.session_name
-                    || self.is_incremented_session(&session.name, &zoxide_dir.session_name)
-                {
-                    items.push(SessionItem::ExistingSession {
-                        name: session.name.clone(),
-                        directory: zoxide_dir.directory.clone(),
-                        is_current: session.is_current_session,
-                    });
-                    break;
-                }
+            if let Some(zoxide_dir) = self.find_matching_zoxide_dir(&session.name) {
+                items.push(SessionItem::ExistingSession {
+                    name: session.name.clone(),
+                    directory: zoxide_dir.directory.clone(),
+                    is_current: session.is_current_session,
+                });
+                added_session_names.insert(session.name.clone());
+            } else if self.config.show_all_sessions {
+                // Session didn't match any zoxide dir, but show_all_sessions is enabled
+                items.push(SessionItem::ExistingSession {
+                    name: session.name.clone(),
+                    directory: String::new(),
+                    is_current: session.is_current_session,
+                });
+                added_session_names.insert(session.name.clone());
             }
         }
 
         // Add resurrectable sessions if configured to show them
         if self.config.show_resurrectable_sessions {
             for (name, duration) in self.session_manager.resurrectable_sessions() {
-                // Check if this session name matches any generated session name from zoxide directories
-                for zoxide_dir in &self.zoxide_directories {
-                    // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
-                    if name == &zoxide_dir.session_name
-                        || self.is_incremented_session(name, &zoxide_dir.session_name)
-                    {
-                        items.push(SessionItem::ResurrectableSession {
-                            name: name.clone(),
-                            duration: duration.clone(),
-                        });
-                        break;
-                    }
+                // Skip if already added as existing session
+                if added_session_names.contains(name) {
+                    continue;
+                }
+
+                let matches_zoxide = self.find_matching_zoxide_dir(name).is_some();
+                if matches_zoxide || self.config.show_all_sessions {
+                    items.push(SessionItem::ResurrectableSession {
+                        name: name.clone(),
+                        duration: *duration,
+                    });
                 }
             }
         }
@@ -198,7 +188,7 @@ impl PluginState {
         items
     }
 
-    /// Check if session name is an incremented version of base name  
+    /// Check if session name is an incremented version of base name
     fn is_incremented_session(&self, session_name: &str, base_name: &str) -> bool {
         if session_name.len() <= base_name.len() || !session_name.starts_with(base_name) {
             return false;
@@ -211,6 +201,15 @@ impl PluginState {
 
         let number_part = &remainder[self.config.session_separator.len()..];
         number_part.parse::<u32>().is_ok() && !number_part.is_empty()
+    }
+
+    /// Check if a session name matches any zoxide directory (exact or incremented name)
+    /// Returns the matching directory if found
+    fn find_matching_zoxide_dir(&self, session_name: &str) -> Option<&ZoxideDirectory> {
+        self.zoxide_directories.iter().find(|zoxide_dir| {
+            session_name == zoxide_dir.session_name
+                || self.is_incremented_session(session_name, &zoxide_dir.session_name)
+        })
     }
 
     /// Get search engine (for UI rendering)
@@ -433,7 +432,7 @@ impl PluginState {
                 if *selected == items_len.saturating_sub(1) {
                     *selected = 0;
                 } else {
-                    *selected = *selected + 1;
+                    *selected += 1;
                 }
             } else {
                 self.selected_index = Some(0);

@@ -11,6 +11,8 @@ pub struct Config {
     pub show_resurrectable_sessions: bool,
     /// Base paths to strip from directory names when generating session names
     pub base_paths: Vec<String>,
+    /// Whether to show all sessions, not just those matching zoxide directories
+    pub show_all_sessions: bool,
 }
 
 impl Default for Config {
@@ -20,6 +22,7 @@ impl Default for Config {
             session_separator: ".".to_string(),
             show_resurrectable_sessions: false,
             base_paths: Vec::new(),
+            show_all_sessions: false,
         }
     }
 }
@@ -46,7 +49,11 @@ impl Config {
                         .filter(|p| !p.is_empty())
                         .collect()
                 })
-                .unwrap_or_else(Vec::new),
+                .unwrap_or_default(),
+            show_all_sessions: config
+                .get("show_all_sessions")
+                .map(|v| v == "true")
+                .unwrap_or(false),
         }
     }
 }

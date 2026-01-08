@@ -64,9 +64,11 @@ impl ZellijPlugin for PluginState {
                 }
             }
             Event::SessionUpdate(session_infos, resurrectable_session_infos) => {
-                self.update_sessions(session_infos);
-                self.update_resurrectable_sessions(resurrectable_session_infos);
-                should_render = true;
+                // Only render if sessions actually changed (handles Zellij's inconsistent updates)
+                let sessions_changed = self.update_sessions(session_infos);
+                let resurrectable_changed =
+                    self.update_resurrectable_sessions(resurrectable_session_infos);
+                should_render = sessions_changed || resurrectable_changed;
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {
                 if context.contains_key("zoxide_query") {
@@ -93,44 +95,43 @@ impl ZellijPlugin for PluginState {
     fn pipe(&mut self, pipe_message: PipeMessage) -> bool {
         // Handle filepicker results for new session creation
         if pipe_message.name == "filepicker_result" {
-            match (pipe_message.payload, pipe_message.args.get("request_id")) {
-                (Some(payload), Some(request_id)) => {
-                    // Check if this request ID is valid for our plugin
-                    if self.is_valid_request_id(request_id) {
-                        self.remove_request_id(request_id);
-                        let selected_path = std::path::PathBuf::from(payload);
+            if let (Some(payload), Some(request_id)) =
+                (pipe_message.payload, pipe_message.args.get("request_id"))
+            {
+                // Check if this request ID is valid for our plugin
+                if self.is_valid_request_id(request_id) {
+                    self.remove_request_id(request_id);
+                    let selected_path = std::path::PathBuf::from(payload);
 
-                        // Determine if we should use the path or its parent directory
-                        let session_folder = if selected_path.exists() {
-                            // Path exists, check if it's a file or directory
-                            if selected_path.is_file() {
-                                // If it's a file, use the parent directory
-                                selected_path
-                                    .parent()
-                                    .map(|p| p.to_path_buf())
-                                    .unwrap_or(selected_path)
-                            } else {
-                                // It's a directory, use it directly
-                                selected_path
-                            }
+                    // Determine if we should use the path or its parent directory
+                    let session_folder = if selected_path.exists() {
+                        // Path exists, check if it's a file or directory
+                        if selected_path.is_file() {
+                            // If it's a file, use the parent directory
+                            selected_path
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or(selected_path)
                         } else {
-                            // Path doesn't exist, try to infer from extension or structure
-                            if let Some(_extension) = selected_path.extension() {
-                                // Has an extension, likely a file - use parent directory
-                                selected_path
-                                    .parent()
-                                    .map(|p| p.to_path_buf())
-                                    .unwrap_or(selected_path)
-                            } else {
-                                // No extension, assume it's a directory
-                                selected_path
-                            }
-                        };
+                            // It's a directory, use it directly
+                            selected_path
+                        }
+                    } else {
+                        // Path doesn't exist, try to infer from extension or structure
+                        if selected_path.extension().is_some() {
+                            // Has an extension, likely a file - use parent directory
+                            selected_path
+                                .parent()
+                                .map(|p| p.to_path_buf())
+                                .unwrap_or(selected_path)
+                        } else {
+                            // No extension, assume it's a directory
+                            selected_path
+                        }
+                    };
 
-                        self.set_new_session_folder(Some(session_folder));
-                    }
+                    self.set_new_session_folder(Some(session_folder));
                 }
-                _ => {}
             }
             true
         } else {
@@ -186,7 +187,7 @@ impl PluginState {
         self.update_zoxide_directories(directories);
     }
 
-    fn generate_smart_session_names(&self, directories: &mut Vec<zoxide::ZoxideDirectory>) {
+    fn generate_smart_session_names(&self, directories: &mut [zoxide::ZoxideDirectory]) {
         use std::collections::HashMap;
 
         // First pass: collect all basenames and find conflicts
@@ -198,10 +199,7 @@ impl PluginState {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            basename_groups
-                .entry(basename)
-                .or_insert_with(Vec::new)
-                .push(i);
+            basename_groups.entry(basename).or_default().push(i);
         }
 
         // Second pass: generate names with context for conflicts and nested directories
@@ -344,7 +342,7 @@ impl PluginState {
 
     fn normalize_path(&self, path: &str) -> String {
         let base_paths = &self.config().base_paths;
-        
+
         // If no base paths configured, return the original path
         if base_paths.is_empty() {
             return path.to_string();
@@ -353,31 +351,31 @@ impl PluginState {
         // Find the longest matching base path
         let mut longest_match: Option<&String> = None;
         let mut longest_match_len = 0;
-        
+
         for base_path in base_paths {
             // Normalize base path (remove trailing slash)
             let normalized_base = base_path.trim_end_matches('/');
-            
+
             // Check if path starts with this base path
             if path.starts_with(normalized_base) {
                 // Make sure it's a directory boundary (not partial match)
-                if path.len() == normalized_base.len() || path.chars().nth(normalized_base.len()) == Some('/') {
-                    if normalized_base.len() > longest_match_len {
-                        longest_match = Some(base_path);
-                        longest_match_len = normalized_base.len();
-                    }
+                let is_directory_boundary = path.len() == normalized_base.len()
+                    || path.chars().nth(normalized_base.len()) == Some('/');
+                if is_directory_boundary && normalized_base.len() > longest_match_len {
+                    longest_match = Some(base_path);
+                    longest_match_len = normalized_base.len();
                 }
             }
         }
-        
+
         if let Some(base_path) = longest_match {
             let normalized_base = base_path.trim_end_matches('/');
-            
+
             // If path exactly matches the base path, keep the full path
             if path == normalized_base {
                 return path.to_string();
             }
-            
+
             // Strip the base path and the following slash
             if let Some(stripped) = path.strip_prefix(normalized_base) {
                 let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
@@ -386,14 +384,13 @@ impl PluginState {
                 }
             }
         }
-        
+
         path.to_string()
     }
 
     fn apply_smart_truncation(&self, segments: &[&str], min_segments: usize) -> String {
         let separator = &self.config().session_separator;
         let max_length = 29;
-        eprintln!("Applying smart truncation for segments: {:?} with min_segments: {}", segments, min_segments);
 
         // Start with minimum required segments from the right
         let mut result_segments: Vec<String> = segments
@@ -420,10 +417,8 @@ impl PluginState {
 
             // If still too long with just one segment, truncate it
             if current_length > max_length && result_segments.len() == 1 {
-                let sep_len = if result_segments.len() > 1 { separator.len() } else { 0 };
-                let available = max_length.saturating_sub(sep_len);
-                result_segments[0].truncate(available);
-                current_length = result_segments.join(separator).len();
+                result_segments[0].truncate(max_length);
+                current_length = result_segments[0].len();
             }
         }
 
@@ -437,7 +432,6 @@ impl PluginState {
             let mut test_segments = vec![abbreviated.clone()];
             test_segments.extend(result_segments.clone());
             let test_length = test_segments.join(separator).len();
-            eprintln!("test_length with segment '{}': {}", segment, test_length);
 
             if test_length <= max_length {
                 result_segments.insert(0, abbreviated);
