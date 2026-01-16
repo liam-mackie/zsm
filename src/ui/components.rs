@@ -28,7 +28,7 @@ pub fn render_new_session_block(
         let long_instruction = "when done, blank for random";
         let new_session_name = new_session_info.name();
         if max_cols_of_new_session_block > 70 {
-            let session_name_text = Text::new(&format!(
+            let session_name_text = Text::new(format!(
                 "{} {}_ (<ENTER> {})",
                 prompt, new_session_name, long_instruction
             ))
@@ -44,7 +44,7 @@ pub fn render_new_session_block(
             );
             print_text_with_coordinates(session_name_text, x, y + 1, None, None);
         } else {
-            let session_name_text = Text::new(&format!("{} {}_ <ENTER>", prompt, new_session_name))
+            let session_name_text = Text::new(format!("{} {}_ <ENTER>", prompt, new_session_name))
                 .color_range(3, ..prompt.len())
                 .color_range(
                     0,
@@ -60,7 +60,7 @@ pub fn render_new_session_block(
             new_session_info.name()
         };
         let prompt = "New session name:";
-        let session_name_text = Text::new(&format!(
+        let session_name_text = Text::new(format!(
             "{} {} (Ctrl+<R> to correct)",
             prompt, new_session_name
         ))
@@ -139,7 +139,7 @@ pub fn render_layout_selection_list(
                     .color_range(0, layout_name.len() + 1..)
                     .color_indices(3, indices)
             } else {
-                Text::new(format!("{}", layout_name))
+                Text::new(layout_name.to_string())
                     .color_range(1, ..)
                     .color_indices(3, indices)
             };
@@ -170,7 +170,7 @@ pub fn render_new_session_folder_prompt(
             let short_folder_prompt = "New session folder:";
             let folder_path = folder.to_string_lossy();
             if max_cols > short_folder_prompt.len() + folder_path.len() + 40 {
-                let folder_text = Text::new(&format!(
+                let folder_text = Text::new(format!(
                     "{} {} (Ctrl+<f> to change, Ctrl+<c> to clear)",
                     short_folder_prompt, folder_path
                 ))
@@ -193,7 +193,7 @@ pub fn render_new_session_folder_prompt(
                 print_text_with_coordinates(folder_text, x, y + 1, None, None);
             } else {
                 let folder_text =
-                    Text::new(&format!("{} {} Ctrl+<f>", short_folder_prompt, folder_path))
+                    Text::new(format!("{} {} Ctrl+<f>", short_folder_prompt, folder_path))
                         .color_range(2, ..short_folder_prompt.len())
                         .color_range(
                             1,
@@ -206,7 +206,7 @@ pub fn render_new_session_folder_prompt(
         }
         None => {
             let folder_prompt = "New session folder (optional):";
-            let folder_text = Text::new(&format!("{} Ctrl+<f> to select", folder_prompt))
+            let folder_text = Text::new(format!("{} Ctrl+<f> to select", folder_prompt))
                 .color_range(2, ..folder_prompt.len())
                 .color_range(3, folder_prompt.len() + 1..folder_prompt.len() + 9);
             print_text_with_coordinates(folder_text, x, y + 1, None, None);

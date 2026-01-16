@@ -11,16 +11,11 @@ pub struct NewSessionInfo {
     pub new_session_folder: Option<PathBuf>,
 }
 
-#[derive(Eq, PartialEq)]
+#[derive(Default, Eq, PartialEq)]
 enum EnteringState {
+    #[default]
     EnteringName,
     EnteringLayoutSearch,
-}
-
-impl Default for EnteringState {
-    fn default() -> Self {
-        EnteringState::EnteringName
-    }
 }
 
 impl NewSessionInfo {
@@ -163,19 +158,19 @@ impl NewSessionInfo {
 
                     match layout_info {
                         Some(layout) => {
-                            let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
+                            let cwd = self.new_session_folder.clone();
                             switch_session_with_layout(new_session_name, layout, cwd);
                         }
                         None => {
                             // Default layout not found, create without layout but with folder
-                            let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
+                            let cwd = self.new_session_folder.clone();
                             switch_session_with_cwd(new_session_name, cwd);
                         }
                     }
                 }
                 None => {
                     // No default layout configured, create without layout but with folder
-                    let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
+                    let cwd = self.new_session_folder.clone();
                     switch_session_with_cwd(new_session_name, cwd);
                 }
             }
@@ -198,11 +193,11 @@ impl NewSessionInfo {
                 if new_session_name != current_session_name.as_ref().map(|s| s.as_str()) {
                     match new_session_layout {
                         Some(new_session_layout) => {
-                            let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
+                            let cwd = self.new_session_folder.clone();
                             switch_session_with_layout(new_session_name, new_session_layout, cwd)
                         }
                         None => {
-                            let cwd = self.new_session_folder.as_ref().map(|c| PathBuf::from(c));
+                            let cwd = self.new_session_folder.clone();
                             switch_session_with_cwd(new_session_name, cwd);
                         }
                     }
@@ -311,7 +306,7 @@ impl NewSessionInfo {
             let matcher = SkimMatcherV2::default().use_cache(true);
             for layout_info in &self.layout_list.layout_list {
                 if let Some((score, indices)) =
-                    matcher.fuzzy_indices(&layout_info.name(), &self.layout_list.layout_search_term)
+                    matcher.fuzzy_indices(layout_info.name(), &self.layout_list.layout_search_term)
                 {
                     matches.push(LayoutSearchResult {
                         layout_info: layout_info.clone(),

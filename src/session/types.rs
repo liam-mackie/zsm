@@ -24,6 +24,15 @@ impl SessionItem {
     pub fn is_resurrectable_session(&self) -> bool {
         matches!(self, SessionItem::ResurrectableSession { .. })
     }
+
+    /// Get the name of this item (session name for sessions, session_name for directories)
+    pub fn name(&self) -> &str {
+        match self {
+            SessionItem::ExistingSession { name, .. } => name,
+            SessionItem::ResurrectableSession { name, .. } => name,
+            SessionItem::Directory { session_name, .. } => session_name,
+        }
+    }
 }
 
 /// Actions that can be performed on sessions
@@ -31,6 +40,4 @@ impl SessionItem {
 pub enum SessionAction {
     /// Switch to an existing session
     Switch(String),
-    /// Kill an existing session
-    Kill(String),
 }

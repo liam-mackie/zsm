@@ -1,8 +1,12 @@
 use zellij_tile::prelude::{Palette, Text};
 
 /// Color theme for the plugin UI
-/// Uses indexed colors that map to user's Zellij theme:
-/// 0 = dim/subtle, 1 = warning/orange, 2 = success/green, 3 = info/blue
+/// Uses indexed colors that map to user's Zellij theme emphasis colors:
+/// 0 = orange (emphasis_0)
+/// 1 = cyan (emphasis_1)
+/// 2 = green (emphasis_2)
+/// 3 = pink/magenta (emphasis_3)
+/// Note: Actual colors depend on user's theme. No "dim" option available.
 #[derive(Copy, Clone, Debug)]
 pub struct Theme;
 
@@ -18,6 +22,7 @@ impl Theme {
     }
 
     /// Text for titles (color index 3 = blue/cyan)
+    #[allow(dead_code)]
     pub fn title(&self, text: &str) -> Text {
         Text::new(text).color_range(3, ..)
     }
@@ -27,12 +32,8 @@ impl Theme {
         Text::new(text)
     }
 
-    /// Text for current session (color index 2 = green - active)
-    pub fn current_session(&self, text: &str) -> Text {
-        Text::new(text).color_range(2, ..)
-    }
-
     /// Text for available session (color index 3 = cyan - available)
+    #[allow(dead_code)]
     pub fn available_session(&self, text: &str) -> Text {
         Text::new(text).color_range(3, ..)
     }

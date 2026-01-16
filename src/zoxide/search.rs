@@ -112,7 +112,7 @@ impl SearchEngine {
             if *selected == self.results.len().saturating_sub(1) {
                 *selected = 0;
             } else {
-                *selected = *selected + 1;
+                *selected += 1;
             }
         } else if !self.results.is_empty() {
             self.selected_index = Some(0);

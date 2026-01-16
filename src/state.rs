@@ -1,13 +1,14 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 use zellij_tile::prelude::*;
 
-use crate::config::Config;
+use crate::config::{Config, SortOrder};
 use crate::new_session_info::NewSessionInfo;
 use crate::session::{SessionAction, SessionItem, SessionManager};
 use crate::zoxide::{SearchEngine, ZoxideDirectory};
 
 /// The main plugin state
+#[derive(Default)]
 pub struct PluginState {
     /// Plugin configuration
     config: Config,
@@ -27,43 +28,28 @@ pub struct PluginState {
     colors: Option<Palette>,
     /// Current session name
     current_session_name: Option<String>,
+    /// Previous session name (for quick-switch)
+    previous_session_name: Option<String>,
     /// Request IDs for plugin communication
     request_ids: Vec<String>,
     /// Selected index in main list (when not searching)
     selected_index: Option<usize>,
+    /// Buffer for rename input
+    rename_buffer: String,
+    /// Whether to show dead (resurrectable) sessions
+    show_dead_sessions: bool,
 }
 
 /// Represents the different screens in the plugin
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub enum ActiveScreen {
     /// Main screen showing zoxide directories and sessions
+    #[default]
     Main,
     /// New session creation screen
     NewSession,
-}
-
-impl Default for ActiveScreen {
-    fn default() -> Self {
-        ActiveScreen::Main
-    }
-}
-
-impl Default for PluginState {
-    fn default() -> Self {
-        Self {
-            config: Config::default(),
-            session_manager: SessionManager::default(),
-            zoxide_directories: Vec::new(),
-            search_engine: SearchEngine::default(),
-            new_session_info: NewSessionInfo::default(),
-            active_screen: ActiveScreen::default(),
-            error: None,
-            colors: None,
-            current_session_name: None,
-            request_ids: Vec::new(),
-            selected_index: None,
-        }
-    }
+    /// Session rename screen
+    Rename,
 }
 
 impl PluginState {
@@ -72,30 +58,51 @@ impl PluginState {
         self.config = Config::from_zellij_config(&configuration);
     }
 
-    /// Update session information
-    pub fn update_sessions(&mut self, sessions: Vec<SessionInfo>) {
-        // Store current session name
+    /// Update session information with stability tracking
+    /// Returns true if the session list actually changed
+    pub fn update_sessions(&mut self, sessions: Vec<SessionInfo>) -> bool {
+        // Find the new current session from incoming data
         for session in &sessions {
             if session.is_current_session {
-                self.current_session_name = Some(session.name.clone());
+                let new_current = Some(session.name.clone());
+
+                // Track session change for quick-switch
+                if self.current_session_name != new_current {
+                    // Request async read of previous session and MRU timestamps
+                    self.request_previous_session_read();
+                    self.request_mru_timestamps_read();
+                    // Reset selection so it will be initialized to previous session
+                    self.selected_index = None;
+                }
+
+                self.current_session_name = new_current;
                 self.new_session_info
                     .update_layout_list(session.available_layouts.clone());
                 break;
             }
         }
 
-        self.session_manager.update_sessions(sessions);
-        self.update_search_if_needed();
+        // Use stable update that handles Zellij's inconsistent data
+        let changed = self.session_manager.update_sessions_stable(sessions);
+        if changed {
+            self.update_search_if_needed();
+        }
+        changed
     }
 
     /// Update session information for resurrectable sessions
+    /// Returns true if the resurrectable session list actually changed
     pub fn update_resurrectable_sessions(
         &mut self,
         resurrectable_sessions: Vec<(String, Duration)>,
-    ) {
-        self.session_manager
-            .update_resurrectable_sessions(resurrectable_sessions);
-        self.update_search_if_needed();
+    ) -> bool {
+        let changed = self
+            .session_manager
+            .update_resurrectable_stable(resurrectable_sessions);
+        if changed {
+            self.update_search_if_needed();
+        }
+        changed
     }
 
     /// Update zoxide directories (managed separately from sessions)
@@ -124,6 +131,7 @@ impl PluginState {
         match self.active_screen {
             ActiveScreen::Main => self.handle_main_screen_key(key),
             ActiveScreen::NewSession => self.handle_new_session_key(key),
+            ActiveScreen::Rename => self.handle_rename_screen_key(key),
         }
     }
 
@@ -148,57 +156,94 @@ impl PluginState {
 
     /// Combine sessions and zoxide directories for display
     fn combined_items(&self) -> Vec<SessionItem> {
-        let mut items = Vec::new();
+        let mut existing_sessions: Vec<SessionItem> = Vec::new();
+        let mut resurrectable_sessions: Vec<SessionItem> = Vec::new();
+        let mut directories: Vec<SessionItem> = Vec::new();
+        let mut added_session_names = HashSet::new();
 
-        // First, add existing sessions that match zoxide directories (including incremented ones)
+        // First, collect existing sessions that match zoxide directories (including incremented ones)
         for session in self.session_manager.sessions() {
-            // Check if this session name matches any generated session name from zoxide directories
-            for zoxide_dir in &self.zoxide_directories {
-                // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
-                if session.name == zoxide_dir.session_name
-                    || self.is_incremented_session(&session.name, &zoxide_dir.session_name)
-                {
-                    items.push(SessionItem::ExistingSession {
-                        name: session.name.clone(),
-                        directory: zoxide_dir.directory.clone(),
-                        is_current: session.is_current_session,
-                    });
-                    break;
-                }
+            if let Some(zoxide_dir) = self.find_matching_zoxide_dir(&session.name) {
+                existing_sessions.push(SessionItem::ExistingSession {
+                    name: session.name.clone(),
+                    directory: zoxide_dir.directory.clone(),
+                    is_current: session.is_current_session,
+                });
+                added_session_names.insert(session.name.clone());
+            } else if self.config.show_all_sessions {
+                // Session didn't match any zoxide dir, but show_all_sessions is enabled
+                existing_sessions.push(SessionItem::ExistingSession {
+                    name: session.name.clone(),
+                    directory: String::new(),
+                    is_current: session.is_current_session,
+                });
+                added_session_names.insert(session.name.clone());
             }
         }
 
-        // Add resurrectable sessions if configured to show them
-        if self.config.show_resurrectable_sessions {
+        // Add resurrectable sessions if toggled on
+        if self.show_dead_sessions {
             for (name, duration) in self.session_manager.resurrectable_sessions() {
-                // Check if this session name matches any generated session name from zoxide directories
-                for zoxide_dir in &self.zoxide_directories {
-                    // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
-                    if name == &zoxide_dir.session_name
-                        || self.is_incremented_session(name, &zoxide_dir.session_name)
-                    {
-                        items.push(SessionItem::ResurrectableSession {
-                            name: name.clone(),
-                            duration: duration.clone(),
-                        });
-                        break;
-                    }
+                // Skip if already added as existing session
+                if added_session_names.contains(name) {
+                    continue;
+                }
+
+                let matches_zoxide = self.find_matching_zoxide_dir(name).is_some();
+                if matches_zoxide || self.config.show_all_sessions {
+                    resurrectable_sessions.push(SessionItem::ResurrectableSession {
+                        name: name.clone(),
+                        duration: *duration,
+                    });
                 }
             }
         }
 
-        // Then add all zoxide directories (always show directories, even if sessions exist)
+        // Collect all zoxide directories (always show directories, even if sessions exist)
         for dir in &self.zoxide_directories {
-            items.push(SessionItem::Directory {
+            directories.push(SessionItem::Directory {
                 path: dir.directory.clone(),
                 session_name: dir.session_name.clone(),
             });
         }
 
+        // Sort existing sessions based on config
+        match self.config.sort_order {
+            SortOrder::Mru => {
+                // Sort by MRU timestamp (descending - most recent first)
+                existing_sessions.sort_by(|a, b| {
+                    let ts_a = self.session_manager.get_mru_rank(a.name());
+                    let ts_b = self.session_manager.get_mru_rank(b.name());
+                    ts_b.cmp(&ts_a) // Descending order
+                });
+            }
+            SortOrder::Alphabetical => {
+                // Sort alphabetically by name (case-insensitive)
+                existing_sessions.sort_by_key(|a| a.name().to_lowercase());
+            }
+        }
+
+        // Sort resurrectable sessions by age (most recently killed first = smallest duration)
+        resurrectable_sessions.sort_by(|a, b| {
+            let dur_a = match a {
+                SessionItem::ResurrectableSession { duration, .. } => *duration,
+                _ => std::time::Duration::MAX,
+            };
+            let dur_b = match b {
+                SessionItem::ResurrectableSession { duration, .. } => *duration,
+                _ => std::time::Duration::MAX,
+            };
+            dur_a.cmp(&dur_b) // Ascending order (smallest/most recent first)
+        });
+
+        // Combine: existing sessions, then resurrectable, then directories
+        let mut items = existing_sessions;
+        items.append(&mut resurrectable_sessions);
+        items.append(&mut directories);
         items
     }
 
-    /// Check if session name is an incremented version of base name  
+    /// Check if session name is an incremented version of base name
     fn is_incremented_session(&self, session_name: &str, base_name: &str) -> bool {
         if session_name.len() <= base_name.len() || !session_name.starts_with(base_name) {
             return false;
@@ -211,6 +256,15 @@ impl PluginState {
 
         let number_part = &remainder[self.config.session_separator.len()..];
         number_part.parse::<u32>().is_ok() && !number_part.is_empty()
+    }
+
+    /// Check if a session name matches any zoxide directory (exact or incremented name)
+    /// Returns the matching directory if found
+    fn find_matching_zoxide_dir(&self, session_name: &str) -> Option<&ZoxideDirectory> {
+        self.zoxide_directories.iter().find(|zoxide_dir| {
+            session_name == zoxide_dir.session_name
+                || self.is_incremented_session(session_name, &zoxide_dir.session_name)
+        })
     }
 
     /// Get search engine (for UI rendering)
@@ -229,12 +283,29 @@ impl PluginState {
     }
 
     /// Get selected index for main screen
-    pub fn selected_index(&self) -> Option<usize> {
+    /// Lazily initializes to previous session for quick-switch if no selection yet
+    pub fn selected_index(&mut self) -> Option<usize> {
         if self.search_engine.is_searching() {
             self.search_engine.selected_index()
         } else {
+            // Initialize selection to previous session if not set
+            if self.selected_index.is_none() {
+                self.selected_index = self.find_previous_session_index();
+            }
             self.selected_index
         }
+    }
+
+    /// Find the index of the previous session in the display list
+    fn find_previous_session_index(&self) -> Option<usize> {
+        let previous = self.previous_session_name.as_ref()?;
+        let items = self.display_items();
+
+        items.iter().position(|item| match item {
+            SessionItem::ExistingSession { name, .. } => name == previous,
+            SessionItem::ResurrectableSession { name, .. } => name == previous,
+            _ => false,
+        })
     }
 
     /// Get colors
@@ -260,6 +331,11 @@ impl PluginState {
     /// Get current configuration
     pub fn config(&self) -> &Config {
         &self.config
+    }
+
+    /// Get rename buffer (for UI rendering)
+    pub fn rename_buffer(&self) -> &str {
+        &self.rename_buffer
     }
 
     /// Get selected item
@@ -323,6 +399,17 @@ impl PluginState {
                 self.fetch_zoxide_directories();
                 true
             }
+            BareKey::Char('r') if key.has_modifiers(&[KeyModifier::Alt]) => {
+                // Rename current session
+                self.rename_buffer = self.current_session_name.clone().unwrap_or_default();
+                self.active_screen = ActiveScreen::Rename;
+                true
+            }
+            BareKey::Char('d') if key.has_modifiers(&[KeyModifier::Alt]) => {
+                // Toggle dead (resurrectable) sessions visibility
+                self.show_dead_sessions = !self.show_dead_sessions;
+                true
+            }
             _ => false,
         }
     }
@@ -331,10 +418,14 @@ impl PluginState {
     fn handle_new_session_key(&mut self, key: KeyWithModifier) -> bool {
         match key.bare_key {
             BareKey::Enter if key.has_no_modifiers() => {
-                // Handle session creation
+                // Only return to Main if we were in layout selection (session created)
+                // If in name entry, handle_selection just advances to layout selection
+                let was_in_layout_selection = self.new_session_info.entering_layout_search_term();
                 self.new_session_info
                     .handle_selection(&self.current_session_name);
-                self.active_screen = ActiveScreen::Main;
+                if was_in_layout_selection {
+                    self.active_screen = ActiveScreen::Main;
+                }
                 true
             }
             BareKey::Enter if key.has_modifiers(&[KeyModifier::Ctrl]) => {
@@ -379,6 +470,52 @@ impl PluginState {
                 self.new_session_info.handle_key(key);
                 true
             }
+        }
+    }
+
+    /// Handle rename screen key input
+    fn handle_rename_screen_key(&mut self, key: KeyWithModifier) -> bool {
+        match key.bare_key {
+            BareKey::Enter if key.has_no_modifiers() => {
+                // Validate and apply rename
+                let new_name = self.rename_buffer.trim();
+                if new_name.is_empty() {
+                    self.set_error("Session name cannot be empty".to_string());
+                } else if new_name.len() >= 108 {
+                    self.set_error("Session name must be shorter than 108 bytes".to_string());
+                } else if new_name.contains('/') {
+                    self.set_error("Session name cannot contain '/'".to_string());
+                } else {
+                    // Optimistic update: rename in local state immediately for instant UI feedback
+                    if let Some(ref old_name) = self.current_session_name {
+                        self.session_manager
+                            .rename_session_in_local_state(old_name, new_name);
+                    }
+                    // Call Zellij's rename_session API
+                    rename_session(new_name);
+                    self.current_session_name = Some(new_name.to_string());
+                    self.rename_buffer.clear();
+                    self.active_screen = ActiveScreen::Main;
+                }
+                true
+            }
+            BareKey::Esc if key.has_no_modifiers() => {
+                // Cancel rename
+                self.rename_buffer.clear();
+                self.active_screen = ActiveScreen::Main;
+                true
+            }
+            BareKey::Char(c) if key.has_no_modifiers() && c != '\n' => {
+                // Add character to buffer
+                self.rename_buffer.push(c);
+                true
+            }
+            BareKey::Backspace if key.has_no_modifiers() => {
+                // Remove last character
+                self.rename_buffer.pop();
+                true
+            }
+            _ => false,
         }
     }
 
@@ -433,7 +570,7 @@ impl PluginState {
                 if *selected == items_len.saturating_sub(1) {
                     *selected = 0;
                 } else {
-                    *selected = *selected + 1;
+                    *selected += 1;
                 }
             } else {
                 self.selected_index = Some(0);
@@ -454,9 +591,16 @@ impl PluginState {
 
         if let Some((is_session, name, path)) = selected_item_data {
             if is_session {
+                // Write current session as "previous" before switching
+                if let Some(ref current) = self.current_session_name {
+                    Self::write_previous_session(current);
+                }
+                // Record MRU timestamp for the target session
+                let timestamp = self.session_manager.record_switch(&name);
+                Self::write_mru_timestamp(&name, timestamp);
                 // Switch to existing session
                 self.session_manager
-                    .execute_action(SessionAction::Switch(name));
+                    .execute_action(SessionAction::Switch(name.clone()));
                 hide_self();
             } else {
                 // Create new session with incremented name
@@ -595,6 +739,11 @@ impl PluginState {
             return;
         }
 
+        // Write current session as "previous" before switching
+        if let Some(ref current) = self.current_session_name {
+            Self::write_previous_session(current);
+        }
+
         // Create session with default layout if configured
         match &self.config.default_layout {
             Some(layout_name) => {
@@ -632,5 +781,101 @@ impl PluginState {
         }
 
         hide_self();
+    }
+
+    /// Write the current session as the previous session via shell command
+    fn write_previous_session(session_name: &str) {
+        use zellij_tile::prelude::run_command;
+        let mut context = BTreeMap::new();
+        context.insert("zsm_internal".to_string(), "write".to_string());
+        run_command(
+            &[
+                "sh",
+                "-c",
+                &format!("echo '{}' > /tmp/zsm-previous-session", session_name),
+            ],
+            context,
+        );
+    }
+
+    /// Request async read of previous session
+    pub fn request_previous_session_read(&self) {
+        use zellij_tile::prelude::run_command;
+        let mut context = BTreeMap::new();
+        context.insert("zsm_read_previous".to_string(), "true".to_string());
+        run_command(
+            &[
+                "sh",
+                "-c",
+                "cat /tmp/zsm-previous-session 2>/dev/null || echo ''",
+            ],
+            context,
+        );
+    }
+
+    /// Set previous session (called from async result)
+    pub fn set_previous_session(&mut self, name: Option<String>) {
+        self.previous_session_name = name;
+        self.selected_index = None;
+    }
+
+    /// Write MRU timestamp for a session via shell command
+    fn write_mru_timestamp(session_name: &str, timestamp: u64) {
+        use zellij_tile::prelude::run_command;
+        let mut context = BTreeMap::new();
+        context.insert("zsm_internal".to_string(), "mru_write".to_string());
+        run_command(
+            &[
+                "sh",
+                "-c",
+                &format!(
+                    "echo '{}:{}' >> /tmp/zsm-mru-timestamps",
+                    session_name, timestamp
+                ),
+            ],
+            context,
+        );
+    }
+
+    /// Request async read of MRU timestamps
+    pub fn request_mru_timestamps_read(&self) {
+        use zellij_tile::prelude::run_command;
+        let mut context = BTreeMap::new();
+        context.insert("zsm_read_mru".to_string(), "true".to_string());
+        run_command(
+            &[
+                "sh",
+                "-c",
+                "cat /tmp/zsm-mru-timestamps 2>/dev/null || echo ''",
+            ],
+            context,
+        );
+    }
+
+    /// Parse MRU timestamps from file data and update session manager
+    pub fn set_mru_timestamps(&mut self, data: &str) {
+        use std::collections::HashMap;
+
+        let mut timestamps: HashMap<String, u64> = HashMap::new();
+
+        // Parse lines of format "session_name:timestamp"
+        // Later lines override earlier ones (most recent write wins)
+        for line in data.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+
+            // Split on last colon to handle session names with colons
+            if let Some(colon_pos) = line.rfind(':') {
+                let name = &line[..colon_pos];
+                let ts_str = &line[colon_pos + 1..];
+                if let Ok(ts) = ts_str.parse::<u64>() {
+                    timestamps.insert(name.to_string(), ts);
+                }
+            }
+        }
+
+        self.session_manager.set_mru_timestamps(timestamps);
     }
 }
