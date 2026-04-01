@@ -23,6 +23,7 @@ pub struct Config {
     pub session_separator: String,
     pub show_resurrectable_sessions: bool,
     pub base_paths: Vec<String>,
+    pub dev_mode: bool,
 }
 
 impl Default for Config {
@@ -33,6 +34,7 @@ impl Default for Config {
             session_separator: ".".to_string(),
             show_resurrectable_sessions: false,
             base_paths: Vec::new(),
+            dev_mode: false,
         }
     }
 }
@@ -63,6 +65,10 @@ impl Config {
                         .collect()
                 })
                 .unwrap_or_default(),
+            dev_mode: config
+                .get("dev_mode")
+                .map(|v| v == "true")
+                .unwrap_or(false),
         }
     }
 }
@@ -79,6 +85,7 @@ mod tests {
         assert!(!config.show_resurrectable_sessions);
         assert!(config.base_paths.is_empty());
         assert!(config.default_layout.is_none());
+        assert!(!config.dev_mode);
     }
 
     #[test]
@@ -168,5 +175,22 @@ mod tests {
         assert!(!config.show_resurrectable_sessions);
         assert!(config.base_paths.is_empty());
         assert!(config.default_layout.is_none());
+        assert!(!config.dev_mode);
+    }
+
+    #[test]
+    fn from_zellij_config_parses_dev_mode_true() {
+        let mut map = BTreeMap::new();
+        map.insert("dev_mode".to_string(), "true".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert!(config.dev_mode);
+    }
+
+    #[test]
+    fn from_zellij_config_parses_dev_mode_false() {
+        let mut map = BTreeMap::new();
+        map.insert("dev_mode".to_string(), "false".to_string());
+        let config = Config::from_zellij_config(&map);
+        assert!(!config.dev_mode);
     }
 }

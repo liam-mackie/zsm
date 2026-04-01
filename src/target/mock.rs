@@ -71,8 +71,9 @@ impl Target for MockTarget {
         self.inner.switched_to.borrow_mut().push(name.to_string());
     }
 
-    fn delete(&self, name: &str) {
+    fn delete(&self, name: &str) -> Result<(), String> {
         self.inner.deleted.borrow_mut().push(name.to_string());
+        Ok(())
     }
 
     fn hide(&self) {
@@ -108,8 +109,9 @@ mod tests {
     #[test]
     fn tracks_deleted_sessions() {
         let mock = MockTarget::new();
-        mock.delete("old-session");
+        let result = mock.delete("old-session");
 
+        assert!(result.is_ok());
         let deleted = mock.deleted_sessions();
         assert_eq!(deleted, vec!["old-session"]);
     }
@@ -121,6 +123,13 @@ mod tests {
         mock.hide();
 
         assert_eq!(mock.hide_count(), 2);
+    }
+
+    #[test]
+    fn delete_returns_ok() {
+        let mock = MockTarget::new();
+        let result = mock.delete("session");
+        assert!(result.is_ok());
     }
 
     #[test]

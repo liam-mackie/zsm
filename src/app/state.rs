@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use zellij_tile::prelude::{LayoutInfo, Palette, SessionInfo};
 
 use crate::data::{DirectoryStore, DisplayList, SessionStore};
-use crate::domain::{Config, Directory, DisplayItem};
+use crate::domain::{Config, Directory, DisplayItem, TargetMode};
 use crate::input::{InputContext, InputHandler};
 use crate::integrations::{zellij_delete_dead_session, zellij_pipe_message_to_plugin};
 use crate::naming::SessionNameGenerator;
-use crate::search::{SearchEngine, SelectionState};
 use crate::target::{create_target, Target};
 
 use super::actions::{Direction, SearchAction};
+use super::screen_state::{MainState, NewSessionState, ScreenState};
 use super::{Action, Screen};
 
 pub struct AppState {
@@ -18,18 +18,11 @@ pub struct AppState {
     target: Box<dyn Target>,
     sessions: SessionStore,
     directories: DirectoryStore,
-    search: SearchEngine,
-    selection: SelectionState,
-    screen: Screen,
+    screen: ScreenState,
     colors: Option<Palette>,
     error: Option<String>,
     current_session: Option<String>,
     layouts: Vec<LayoutInfo>,
-    new_session_name: String,
-    new_session_folder: Option<PathBuf>,
-    layout_search: String,
-    layout_selection: SelectionState,
-    entering_name: bool,
     request_ids: Vec<String>,
 }
 
@@ -40,18 +33,11 @@ impl Default for AppState {
             target: create_target(Default::default()),
             sessions: SessionStore::default(),
             directories: DirectoryStore::default(),
-            search: SearchEngine::default(),
-            selection: SelectionState::default(),
-            screen: Screen::default(),
+            screen: ScreenState::default(),
             colors: None,
             error: None,
             current_session: None,
             layouts: Vec::new(),
-            new_session_name: String::new(),
-            new_session_folder: None,
-            layout_search: String::new(),
-            layout_selection: SelectionState::default(),
-            entering_name: true,
             request_ids: Vec::new(),
         }
     }
@@ -61,14 +47,6 @@ impl AppState {
     pub fn initialize(&mut self, configuration: BTreeMap<String, String>) {
         self.config = Config::from_zellij_config(&configuration);
         self.target = create_target(self.config.mode);
-    }
-
-    pub fn set_colors(&mut self, colors: Palette) {
-        self.colors = Some(colors);
-    }
-
-    pub fn colors(&self) -> Option<Palette> {
-        self.colors
     }
 
     pub fn update_sessions(&mut self, infos: Vec<SessionInfo>) {
@@ -99,13 +77,22 @@ impl AppState {
         }
 
         let context = InputContext {
-            is_searching: self.search.is_active(),
+            is_searching: match &self.screen {
+                ScreenState::Main(s) => s.search.is_active(),
+                _ => false,
+            },
             has_pending_deletion: self.sessions.pending_deletion().is_some(),
-            session_name_empty: self.new_session_name.is_empty(),
-            entering_name: self.entering_name,
+            session_name_empty: match &self.screen {
+                ScreenState::NewSession(s) => s.name.is_empty(),
+                _ => true,
+            },
+            entering_name: match &self.screen {
+                ScreenState::NewSession(s) => s.entering_name,
+                _ => true,
+            },
         };
 
-        let action = InputHandler::handle(key, self.screen, &context);
+        let action = InputHandler::handle(key, self.screen(), &context);
         self.apply_action(action)
     }
 
@@ -123,39 +110,32 @@ impl AppState {
             Action::ClearFolder => self.clear_folder(),
             Action::Refresh => self.request_refresh(),
             Action::Hide => {
-                self.target.hide();
+                if !self.config.dev_mode {
+                    self.target.hide();
+                }
                 false
+            }
+            Action::ToggleMode => {
+                if self.config.dev_mode {
+                    self.toggle_mode()
+                } else {
+                    false
+                }
             }
             Action::None => false,
         }
     }
 
     fn navigate(&mut self, direction: Direction) -> bool {
-        match self.screen {
-            Screen::Main => {
-                if self.search.is_active() {
-                    match direction {
-                        Direction::Up => self.search.move_up(),
-                        Direction::Down => self.search.move_down(),
-                    }
-                } else {
-                    match direction {
-                        Direction::Up => self.selection.move_up(),
-                        Direction::Down => self.selection.move_down(),
-                    }
-                }
-            }
-            Screen::NewSession if !self.entering_name => match direction {
-                Direction::Up => self.layout_selection.move_up(),
-                Direction::Down => self.layout_selection.move_down(),
-            },
-            _ => {}
+        match &mut self.screen {
+            ScreenState::Main(s) => s.navigate(direction),
+            ScreenState::NewSession(s) => s.navigate(direction),
         }
         true
     }
 
     fn handle_select(&mut self) -> bool {
-        match self.screen {
+        match self.screen() {
             Screen::Main => self.select_main_item(),
             Screen::NewSession => self.create_session(),
         }
@@ -167,7 +147,9 @@ impl AppState {
             Some(DisplayItem::ExistingSession { name, .. })
             | Some(DisplayItem::ResurrectableSession { name, .. }) => {
                 self.target.switch_to(&name);
-                self.target.hide();
+                if !self.config.dev_mode {
+                    self.target.hide();
+                }
             }
             Some(DisplayItem::Directory {
                 path, session_name, ..
@@ -175,11 +157,12 @@ impl AppState {
                 let name = self
                     .sessions
                     .generate_incremented_name(&session_name, &self.config.session_separator);
-                self.new_session_name = name;
-                self.new_session_folder = Some(PathBuf::from(path));
-                self.entering_name = false;
-                self.layout_selection.update_count(self.layouts.len());
-                self.screen = Screen::NewSession;
+                let layout_count = self.layouts.len();
+                self.screen = ScreenState::NewSession(NewSessionState::new(
+                    name,
+                    Some(PathBuf::from(path)),
+                    layout_count,
+                ));
             }
             None => {}
         }
@@ -187,29 +170,37 @@ impl AppState {
     }
 
     fn create_session(&mut self) -> bool {
-        if self.entering_name {
-            self.entering_name = false;
-            self.layout_selection.update_count(self.layouts.len());
+        // First pass: handle entering_name toggle
+        if let ScreenState::NewSession(s) = &mut self.screen {
+            if s.entering_name {
+                s.entering_name = false;
+                s.layout_selection.update_count(self.layouts.len());
+                return true;
+            }
+        }
+
+        // Second pass: extract values then act (avoids borrow conflict on self.screen)
+        let (name, folder, layout) = if let ScreenState::NewSession(s) = &self.screen {
+            let filtered = s.filtered_layouts(&self.layouts);
+            let layout = s.layout_selection.index().and_then(|i| filtered.get(i).cloned());
+            (s.name.clone(), s.folder.clone(), layout)
+        } else {
             return true;
+        };
+
+        if let Some(folder) = folder {
+            self.target.create(&name, &folder, layout);
+            if !self.config.dev_mode {
+                self.target.hide();
+            }
         }
 
-        let layout = self
-            .layout_selection
-            .index()
-            .and_then(|i| self.filtered_layouts().get(i).cloned());
-
-        if let Some(folder) = &self.new_session_folder {
-            self.target
-                .create(&self.new_session_name, folder, layout);
-            self.target.hide();
-        }
-
-        self.screen = Screen::Main;
+        self.screen = ScreenState::Main(MainState::default());
         true
     }
 
     fn handle_quick_create(&mut self) -> bool {
-        match self.screen {
+        match self.screen() {
             Screen::Main => {
                 if let Some(DisplayItem::Directory {
                     path, session_name, ..
@@ -218,24 +209,29 @@ impl AppState {
                     let name = self
                         .sessions
                         .generate_incremented_name(&session_name, &self.config.session_separator);
-
-                    let layout = self.config.default_layout.as_ref().and_then(|name| {
-                        self.layouts.iter().find(|l| l.name() == name).cloned()
+                    let layout = self.config.default_layout.as_ref().and_then(|n| {
+                        self.layouts.iter().find(|l| l.name() == n).cloned()
                     });
-
                     self.target.create(&name, &PathBuf::from(path), layout);
-                    self.target.hide();
+                    if !self.config.dev_mode {
+                        self.target.hide();
+                    }
                 }
             }
             Screen::NewSession => {
-                if let Some(folder) = &self.new_session_folder {
-                    let layout = self.config.default_layout.as_ref().and_then(|name| {
-                        self.layouts.iter().find(|l| l.name() == name).cloned()
+                let (name, folder) = if let ScreenState::NewSession(s) = &self.screen {
+                    (s.name.clone(), s.folder.clone())
+                } else {
+                    return true;
+                };
+                if let Some(folder) = folder {
+                    let layout = self.config.default_layout.as_ref().and_then(|n| {
+                        self.layouts.iter().find(|l| l.name() == n).cloned()
                     });
-
-                    self.target
-                        .create(&self.new_session_name, folder, layout);
-                    self.target.hide();
+                    self.target.create(&name, &folder, layout);
+                    if !self.config.dev_mode {
+                        self.target.hide();
+                    }
                 }
             }
         }
@@ -254,10 +250,14 @@ impl AppState {
     fn confirm_delete(&mut self) -> bool {
         if let Some(name) = self.sessions.confirm_deletion() {
             let is_resurrectable = self.sessions.is_resurrectable(&name);
-            if is_resurrectable {
+            let result = if is_resurrectable {
                 zellij_delete_dead_session(&name);
+                Ok(())
             } else {
-                self.target.delete(&name);
+                self.target.delete(&name)
+            };
+            if let Err(msg) = result {
+                self.set_error(msg);
             }
         }
         true
@@ -269,45 +269,46 @@ impl AppState {
     }
 
     fn handle_search(&mut self, action: SearchAction) -> bool {
-        let items = self.display_items();
-        match self.screen {
-            Screen::Main => match action {
-                SearchAction::AddChar(c) => self.search.add_char(c, &items),
-                SearchAction::Backspace => self.search.backspace(&items),
-                SearchAction::Clear => self.search.clear(),
-            },
-            Screen::NewSession if self.entering_name => match action {
-                SearchAction::AddChar(c) => self.new_session_name.push(c),
+        match &mut self.screen {
+            ScreenState::Main(s) => {
+                let items = DisplayList::build(
+                    &self.sessions,
+                    &self.directories,
+                    self.config.show_resurrectable_sessions,
+                    &self.config.session_separator,
+                );
+                s.handle_search(action, &items);
+            }
+            ScreenState::NewSession(s) if s.entering_name => match action {
+                SearchAction::AddChar(c) => s.name.push(c),
                 SearchAction::Backspace => {
-                    self.new_session_name.pop();
+                    s.name.pop();
                 }
-                SearchAction::Clear => self.new_session_name.clear(),
+                SearchAction::Clear => s.name.clear(),
             },
-            Screen::NewSession => match action {
-                SearchAction::AddChar(c) => {
-                    self.layout_search.push(c);
-                    self.update_layout_selection();
-                }
-                SearchAction::Backspace => {
-                    self.layout_search.pop();
-                    self.update_layout_selection();
-                }
-                SearchAction::Clear => {
-                    self.layout_search.clear();
-                    self.entering_name = true;
-                }
-            },
+            ScreenState::NewSession(s) => {
+                s.handle_search(action, &self.layouts);
+            }
         }
         true
     }
 
     fn go_to_screen(&mut self, screen: Screen) -> bool {
-        self.screen = screen;
-        if screen == Screen::Main {
-            self.new_session_name.clear();
-            self.new_session_folder = None;
-            self.layout_search.clear();
-            self.entering_name = true;
+        match screen {
+            Screen::Main => {
+                self.screen = ScreenState::Main(MainState::default());
+            }
+            Screen::NewSession => {
+                // Creates a blank NewSessionState (no folder). The intended flow is:
+                // GoToScreen(NewSession) → OpenFilepicker → set_new_session_folder(Some(...)) → Select.
+                // Pressing Enter before a folder is set is a silent no-op (no target.create call).
+                let layout_count = self.layouts.len();
+                self.screen = ScreenState::NewSession(NewSessionState::new(
+                    String::new(),
+                    None,
+                    layout_count,
+                ));
+            }
         }
         true
     }
@@ -321,20 +322,23 @@ impl AppState {
         let mut config = BTreeMap::new();
         config.insert("request_id".to_string(), request_id.clone());
 
-        if let Some(folder) = &self.new_session_folder {
-            config.insert("caller_cwd".to_string(), folder.to_string_lossy().to_string());
+        if let ScreenState::NewSession(s) = &self.screen {
+            if let Some(folder) = &s.folder {
+                config.insert("caller_cwd".to_string(), folder.to_string_lossy().to_string());
+            }
         }
 
         let mut args = BTreeMap::new();
         args.insert("request_id".to_string(), request_id);
 
         zellij_pipe_message_to_plugin("filepicker", "filepicker", config, args, "Select folder...");
-
         true
     }
 
     fn clear_folder(&mut self) -> bool {
-        self.new_session_folder = None;
+        if let ScreenState::NewSession(s) = &mut self.screen {
+            s.folder = None;
+        }
         true
     }
 
@@ -342,59 +346,72 @@ impl AppState {
         true
     }
 
-    fn refresh_selection(&mut self) {
-        let count = self.display_items().len();
-        self.selection.update_count(count);
+    fn toggle_mode(&mut self) -> bool {
+        self.config.mode = match self.config.mode {
+            TargetMode::Session => TargetMode::Tab,
+            TargetMode::Tab => TargetMode::Session,
+        };
+        self.target = create_target(self.config.mode);
+        true
     }
 
-    fn update_layout_selection(&mut self) {
-        let count = self.filtered_layouts().len();
-        self.layout_selection.update_count(count);
+    fn refresh_selection(&mut self) {
+        let count = DisplayList::build(
+            &self.sessions,
+            &self.directories,
+            self.config.show_resurrectable_sessions,
+            &self.config.session_separator,
+        )
+        .len();
+        if let ScreenState::Main(s) = &mut self.screen {
+            s.refresh_selection(count);
+        }
     }
 
     pub fn display_items(&self) -> Vec<DisplayItem> {
-        if self.search.is_active() {
-            self.search.results().iter().map(|r| r.item.clone()).collect()
-        } else {
-            DisplayList::build(
-                &self.sessions,
-                &self.directories,
-                self.config.show_resurrectable_sessions,
-                &self.config.session_separator,
-            )
+        match &self.screen {
+            ScreenState::Main(s) => {
+                if s.search.is_active() {
+                    s.search.results().iter().map(|r| r.item.clone()).collect()
+                } else {
+                    DisplayList::build(
+                        &self.sessions,
+                        &self.directories,
+                        self.config.show_resurrectable_sessions,
+                        &self.config.session_separator,
+                    )
+                }
+            }
+            ScreenState::NewSession(_) => Vec::new(),
         }
     }
 
     pub fn selected_item(&self) -> Option<DisplayItem> {
         let items = self.display_items();
-        let index = if self.search.is_active() {
-            self.search.selected_index()
-        } else {
-            self.selection.index()
+        let index = match &self.screen {
+            ScreenState::Main(s) => s.selected_index(),
+            ScreenState::NewSession(_) => return None,
         };
         index.and_then(|i| items.get(i).cloned())
     }
 
     pub fn filtered_layouts(&self) -> Vec<LayoutInfo> {
-        if self.layout_search.is_empty() {
-            self.layouts.clone()
-        } else {
-            self.layouts
-                .iter()
-                .filter(|l| {
-                    l.name()
-                        .to_lowercase()
-                        .contains(&self.layout_search.to_lowercase())
-                })
-                .cloned()
-                .collect()
+        match &self.screen {
+            ScreenState::NewSession(s) => s.filtered_layouts(&self.layouts),
+            _ => Vec::new(),
         }
     }
 
-    // Accessors for rendering
+    // ─── Screen accessor ────────────────────────────────────────────────────
+
     pub fn screen(&self) -> Screen {
-        self.screen
+        match &self.screen {
+            ScreenState::Main(_) => Screen::Main,
+            ScreenState::NewSession(_) => Screen::NewSession,
+        }
     }
+
+    // ─── Shared accessors ───────────────────────────────────────────────────
 
     pub fn config(&self) -> &Config {
         &self.config
@@ -402,18 +419,6 @@ impl AppState {
 
     pub fn sessions(&self) -> &SessionStore {
         &self.sessions
-    }
-
-    pub fn search(&self) -> &SearchEngine {
-        &self.search
-    }
-
-    pub fn selected_index(&self) -> Option<usize> {
-        if self.search.is_active() {
-            self.search.selected_index()
-        } else {
-            self.selection.index()
-        }
     }
 
     pub fn error(&self) -> Option<&str> {
@@ -424,25 +429,75 @@ impl AppState {
         self.error = Some(error);
     }
 
+    pub fn colors(&self) -> Option<Palette> {
+        self.colors
+    }
+
+    pub fn set_colors(&mut self, colors: Palette) {
+        self.colors = Some(colors);
+    }
+
+    // ─── Main screen accessors ──────────────────────────────────────────────
+
+    /// Search term for the main screen search bar. Returns `""` if not on main screen.
+    pub fn search_term(&self) -> &str {
+        match &self.screen {
+            ScreenState::Main(s) => s.search.term(),
+            _ => "",
+        }
+    }
+
+    pub fn selected_index(&self) -> Option<usize> {
+        match &self.screen {
+            ScreenState::Main(s) => s.selected_index(),
+            _ => None,
+        }
+    }
+
+    // ─── NewSession screen accessors ────────────────────────────────────────
+
+    pub fn entering_name(&self) -> bool {
+        match &self.screen {
+            ScreenState::NewSession(s) => s.entering_name,
+            _ => false,
+        }
+    }
+
     pub fn new_session_name(&self) -> &str {
-        &self.new_session_name
+        match &self.screen {
+            ScreenState::NewSession(s) => &s.name,
+            _ => "",
+        }
     }
 
     pub fn new_session_folder(&self) -> Option<&PathBuf> {
-        self.new_session_folder.as_ref()
+        match &self.screen {
+            ScreenState::NewSession(s) => s.folder.as_ref(),
+            _ => None,
+        }
     }
 
     pub fn layout_search(&self) -> &str {
-        &self.layout_search
+        match &self.screen {
+            ScreenState::NewSession(s) => &s.layout_search,
+            _ => "",
+        }
     }
 
     pub fn layout_selection_index(&self) -> Option<usize> {
-        self.layout_selection.index()
+        match &self.screen {
+            ScreenState::NewSession(s) => s.layout_selection.index(),
+            _ => None,
+        }
     }
 
-    pub fn entering_name(&self) -> bool {
-        self.entering_name
+    pub fn set_new_session_folder(&mut self, folder: Option<PathBuf>) {
+        if let ScreenState::NewSession(s) = &mut self.screen {
+            s.folder = folder;
+        }
     }
+
+    // ─── Request ID tracking ────────────────────────────────────────────────
 
     pub fn is_valid_request_id(&self, id: &str) -> bool {
         self.request_ids.contains(&id.to_string())
@@ -450,10 +505,6 @@ impl AppState {
 
     pub fn remove_request_id(&mut self, id: &str) {
         self.request_ids.retain(|r| r != id);
-    }
-
-    pub fn set_new_session_folder(&mut self, folder: Option<PathBuf>) {
-        self.new_session_folder = folder;
     }
 
     pub fn should_refresh(&self) -> bool {
@@ -584,6 +635,28 @@ mod tests {
         assert!(state.sessions().pending_deletion().is_none());
     }
 
+    #[test]
+    fn confirm_delete_sets_error_on_target_failure() {
+        struct FailTarget;
+        impl crate::target::Target for FailTarget {
+            fn create(&self, _name: &str, _directory: &std::path::Path, _layout: Option<zellij_tile::prelude::LayoutInfo>) {}
+            fn switch_to(&self, _name: &str) {}
+            fn delete(&self, _name: &str) -> Result<(), String> {
+                Err("Tab deletion is not supported".to_string())
+            }
+            fn hide(&self) {}
+        }
+
+        let mut state = AppState::default();
+        state.target = Box::new(FailTarget);
+        state.update_sessions(vec![make_session_info("to-delete", false)]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Delete);
+        state.apply_action(Action::ConfirmDelete);
+        assert!(state.error().is_some());
+        assert!(state.error().unwrap().contains("not supported"));
+    }
+
     // Search tests
     #[test]
     fn search_filters_display_items() {
@@ -593,7 +666,7 @@ mod tests {
             make_session_info("other", false),
         ]);
         state.apply_action(Action::Search(SearchAction::AddChar('p')));
-        assert!(state.search().is_active());
+        assert!(!state.search_term().is_empty());
         let items = state.display_items();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].display_name(), "project");
@@ -604,9 +677,9 @@ mod tests {
         let (mut state, _) = make_app_with_mock();
         state.update_sessions(vec![make_session_info("test", false)]);
         state.apply_action(Action::Search(SearchAction::AddChar('t')));
-        assert!(state.search().is_active());
+        assert!(!state.search_term().is_empty());
         state.apply_action(Action::Search(SearchAction::Clear));
-        assert!(!state.search().is_active());
+        assert!(state.search_term().is_empty());
     }
 
     // Screen transition tests
@@ -637,6 +710,38 @@ mod tests {
         let (mut state, mock) = make_app_with_mock();
         state.apply_action(Action::Hide);
         assert_eq!(mock.hide_count(), 1);
+    }
+
+    // Toggle mode tests
+    #[test]
+    fn toggle_mode_switches_session_to_tab_in_dev_mode() {
+        let (mut state, _) = make_app_with_mock();
+        let mut config = BTreeMap::new();
+        config.insert("dev_mode".to_string(), "true".to_string());
+        state.initialize(config);
+        assert_eq!(state.config().mode, TargetMode::Session);
+        state.apply_action(Action::ToggleMode);
+        assert_eq!(state.config().mode, TargetMode::Tab);
+    }
+
+    #[test]
+    fn toggle_mode_switches_tab_to_session_in_dev_mode() {
+        let (mut state, _) = make_app_with_mock();
+        let mut config = BTreeMap::new();
+        config.insert("dev_mode".to_string(), "true".to_string());
+        config.insert("mode".to_string(), "tab".to_string());
+        state.initialize(config);
+        assert_eq!(state.config().mode, TargetMode::Tab);
+        state.apply_action(Action::ToggleMode);
+        assert_eq!(state.config().mode, TargetMode::Session);
+    }
+
+    #[test]
+    fn toggle_mode_ignored_when_not_in_dev_mode() {
+        let (mut state, _) = make_app_with_mock();
+        assert_eq!(state.config().mode, TargetMode::Session);
+        state.apply_action(Action::ToggleMode);
+        assert_eq!(state.config().mode, TargetMode::Session);
     }
 
     // Quick create tests

@@ -2,7 +2,7 @@ use std::path::Path;
 use zellij_tile::prelude::LayoutInfo;
 
 use crate::integrations::{
-    zellij_close_focused_tab, zellij_focus_or_create_tab, zellij_go_to_tab_name, zellij_hide_self,
+    zellij_focus_or_create_tab, zellij_go_to_tab_name, zellij_hide_self,
 };
 
 use super::traits::Target;
@@ -20,10 +20,8 @@ impl Target for TabTarget {
         zellij_go_to_tab_name(name);
     }
 
-    fn delete(&self, _name: &str) {
-        // Note: Tab deletion requires the tab to be focused first
-        // This is a limitation of the current API
-        zellij_close_focused_tab();
+    fn delete(&self, _name: &str) -> Result<(), String> {
+        Err("Tab deletion is not supported — switch to the tab and close it manually".to_string())
     }
 
     fn hide(&self) {

@@ -7,7 +7,9 @@ layout {
         pane size="80%" split_direction="vertical" {
             // Left: Plugin under development (60%)
             pane size="60%" {
-                plugin location="file:target/wasm32-wasip1/debug/zsm.wasm"
+                plugin location="file:target/wasm32-wasip1/debug/zsm.wasm" {
+                    dev_mode "true"
+                }
             }
             // Right: Build logs with auto-rebuild (40%)
             pane size="40%" {

@@ -23,8 +23,9 @@ impl Target for SessionTarget {
         zellij_switch_session(Some(name));
     }
 
-    fn delete(&self, name: &str) {
+    fn delete(&self, name: &str) -> Result<(), String> {
         zellij_kill_sessions(&[name.to_string()]);
+        Ok(())
     }
 
     fn hide(&self) {

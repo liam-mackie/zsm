@@ -12,6 +12,7 @@ pub enum Action {
     ClearFolder,
     Refresh,
     Hide,
+    ToggleMode,
     None,
 }
 

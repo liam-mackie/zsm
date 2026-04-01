@@ -8,8 +8,5 @@ pub mod search;
 pub mod target;
 pub mod ui;
 
-#[cfg(target_family = "wasm")]
+#[cfg(target_arch = "wasm32")]
 mod plugin;
-
-#[cfg(target_family = "wasm")]
-pub use plugin::*;

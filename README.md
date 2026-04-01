@@ -177,22 +177,61 @@ ZSM requires these Zellij permissions:
 
 ## 🚧 Development
 
-### Local Development
-
-#### Option 1: Using Zellij Plugin Layout
+### Prerequisites
 
 ```bash
-# Start the plugin development layout
-zellij -l zellij.kdl
-# Use the default alt-r keybinding to reload the plugin
-# If you exit the plugin, you can re-open it with the following command:
-zellij action launch-or-focus-plugin file:target/wasm32-wasip1/debug/zsm.wasm
+# Add WASM target
+rustup target add wasm32-wasip1
 ```
 
-#### Option 2: Using watchexec
+### Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build debug WASM plugin |
+| `make release` | Build release WASM plugin |
+| `make test` | Run tests (native target) |
+| `make dev` | Start Zellij with debug layout |
+| `make watch` | Watch for changes and auto-rebuild + reload |
+| `make reload` | Manually reload plugin in running Zellij |
+| `make clean` | Clean build artifacts |
+
+### Local Development
+
+#### Option 1: Using the dev layout (recommended)
 
 ```bash
-watchexec --exts rs -- 'cargo build --target wasm-wasip1; zellij action start-or-reload-plugin file:target/wasm32-wasip1/debug/zsm.wasm'
+# Start Zellij with the debug layout
+make dev
+
+# In a separate pane, watch for changes and auto-reload
+make watch
+```
+
+#### Option 2: Manual workflow
+
+```bash
+# Build the plugin
+make build
+
+# Start Zellij with plugin layout
+zellij -l zellij.kdl
+
+# Reload after changes
+make reload
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+make test
+
+# Run specific test module
+cargo test --lib search::engine::tests
+
+# Run with output
+cargo test --lib -- --nocapture
 ```
 
 ## 🤝 Contributing

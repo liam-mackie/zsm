@@ -48,6 +48,7 @@ impl InputHandler {
             }
             BareKey::Char('c') if key.has_modifiers(&[KeyModifier::Ctrl]) => Action::Hide,
             BareKey::Char('r') if key.has_modifiers(&[KeyModifier::Ctrl]) => Action::Refresh,
+            BareKey::Char('m') if key.has_modifiers(&[KeyModifier::Ctrl]) => Action::ToggleMode,
             _ => Action::None,
         }
     }
@@ -203,6 +204,13 @@ mod tests {
         let context = InputContext::default();
         let action = InputHandler::handle(ctrl_key('r'), Screen::Main, &context);
         assert_eq!(action, Action::Refresh);
+    }
+
+    #[test]
+    fn ctrl_m_toggles_mode() {
+        let context = InputContext::default();
+        let action = InputHandler::handle(ctrl_key('m'), Screen::Main, &context);
+        assert_eq!(action, Action::ToggleMode);
     }
 
     // Deletion confirmation tests

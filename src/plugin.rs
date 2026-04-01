@@ -6,8 +6,6 @@ use crate::integrations::parse_zoxide_output;
 use crate::ui;
 use zellij_tile::prelude::*;
 
-register_plugin!(AppState);
-
 impl ZellijPlugin for AppState {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.initialize(configuration);

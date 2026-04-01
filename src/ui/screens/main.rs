@@ -1,7 +1,7 @@
 use zellij_tile::prelude::{print_text_with_coordinates, Text};
 
 use crate::app::AppState;
-use crate::domain::DisplayItem;
+use crate::domain::{DisplayItem, TargetMode};
 use crate::ui::widgets::{render_deletion_dialog, render_list, render_search_bar, ListItem};
 use crate::ui::Theme;
 
@@ -16,11 +16,19 @@ pub fn render_main_screen(state: &AppState, rows: usize, cols: usize, theme: &Th
         return;
     }
 
-    let title = theme.title("Zoxide Session Manager");
+    let title = if state.config().dev_mode {
+        let mode_label = match state.config().mode {
+            TargetMode::Session => "[Session]",
+            TargetMode::Tab => "[Tab]",
+        };
+        theme.title(&format!("Zoxide Session Manager {}", mode_label))
+    } else {
+        theme.title("Zoxide Session Manager")
+    };
     print_text_with_coordinates(title, 0, 0, None, None);
 
     let search_row = 2;
-    render_search_bar(state.search().term(), search_row, theme);
+    render_search_bar(state.search_term(), search_row, theme);
 
     let list_start = 4;
     let list_max_rows = rows.saturating_sub(list_start + 2);
@@ -40,7 +48,12 @@ pub fn render_main_screen(state: &AppState, rows: usize, cols: usize, theme: &Th
     render_list(&list_items, list_start, list_max_rows, selected, theme);
 
     let help_row = rows.saturating_sub(1);
-    let help = theme.dim("↑↓ Navigate | Enter Select | Ctrl+Enter Quick | Del Delete | Esc Close");
+    let help_text = if state.config().dev_mode {
+        "↑↓ Navigate | Enter Select | Ctrl+Enter Quick | Del Delete | Ctrl+M Mode | Esc Close"
+    } else {
+        "↑↓ Navigate | Enter Select | Ctrl+Enter Quick | Del Delete | Esc Close"
+    };
+    let help = theme.dim(help_text);
     print_text_with_coordinates(help, 0, help_row, None, None);
 }
 

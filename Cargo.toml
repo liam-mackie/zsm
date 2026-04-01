@@ -13,7 +13,11 @@ readme = "README.md"
 [lib]
 name = "zsm"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "zsm"
+path = "src/main.rs"
 
 [dependencies]
 zellij-tile = "0.43.1"
