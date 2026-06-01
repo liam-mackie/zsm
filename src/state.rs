@@ -151,51 +151,59 @@ impl PluginState {
         use std::collections::HashSet;
 
         let mut items = Vec::new();
-        let mut shown_session_names: HashSet<String> = HashSet::new();
+        // Track which zoxide directory paths are already represented by a session
+        // so we can skip the plain Directory entry for them.
+        let mut active_dirs: HashSet<String> = HashSet::new();
 
-        // Add every active session. When the session name matches a zoxide
-        // directory's generated name (exact or incremented), surface that path
-        // alongside it; otherwise leave the directory blank.
+        // First, add existing sessions that match zoxide directories (including incremented ones)
         for session in self.session_manager.sessions() {
-            let directory = self
-                .zoxide_directories
-                .iter()
-                .find(|dir| {
-                    session.name == dir.session_name
-                        || self.is_incremented_session(&session.name, &dir.session_name)
-                })
-                .map(|dir| dir.directory.clone())
-                .unwrap_or_default();
-
-            items.push(SessionItem::ExistingSession {
-                name: session.name.clone(),
-                directory,
-                is_current: session.is_current_session,
-            });
-            shown_session_names.insert(session.name.clone());
-        }
-
-        // Add resurrectable sessions if configured. Skip any whose name is
-        // already shown as an active session.
-        if self.config.show_resurrectable_sessions {
-            for (name, duration) in self.session_manager.resurrectable_sessions() {
-                if shown_session_names.contains(name) {
-                    continue;
+            // Check if this session name matches any generated session name from zoxide directories
+            for zoxide_dir in &self.zoxide_directories {
+                // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
+                if session.name == zoxide_dir.session_name
+                    || self.is_incremented_session(&session.name, &zoxide_dir.session_name)
+                {
+                    items.push(SessionItem::ExistingSession {
+                        name: session.name.clone(),
+                        directory: zoxide_dir.directory.clone(),
+                        is_current: session.is_current_session,
+                    });
+                    active_dirs.insert(zoxide_dir.directory.clone());
+                    break;
                 }
-                items.push(SessionItem::ResurrectableSession {
-                    name: name.clone(),
-                    duration: *duration,
-                });
-                shown_session_names.insert(name.clone());
             }
         }
 
-        // Then add all zoxide directories (always show directories, even if sessions exist)
+        // Add resurrectable sessions if configured to show them
+        if self.config.show_resurrectable_sessions {
+            for (name, duration) in self.session_manager.resurrectable_sessions() {
+                // Check if this session name matches any generated session name from zoxide directories
+                for zoxide_dir in &self.zoxide_directories {
+                    // Match exact name or incremented names (e.g., "project" matches "project.2", "project.3", etc.)
+                    if name == &zoxide_dir.session_name
+                        || self.is_incremented_session(name, &zoxide_dir.session_name)
+                    {
+                        items.push(SessionItem::ResurrectableSession {
+                            name: name.clone(),
+                            duration: duration.clone(),
+                        });
+                        active_dirs.insert(zoxide_dir.directory.clone());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Add zoxide directories, skipping those already shown as active/resurrectable sessions.
+        // This ensures each path appears exactly once: highlighted when a session exists,
+        // or as a plain directory entry otherwise.
         for dir in &self.zoxide_directories {
-            items.push(SessionItem::Directory {
-                path: dir.directory.clone(),
-                session_name: dir.session_name.clone(),
-            });
+            if !active_dirs.contains(&dir.directory) {
+                items.push(SessionItem::Directory {
+                    path: dir.directory.clone(),
+                    session_name: dir.session_name.clone(),
+                });
+            }
         }
 
         items

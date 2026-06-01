@@ -224,7 +224,19 @@ impl PluginRenderer {
     }
 
     /// Render a session item
+    /// Render a session item.
+    ///
+    /// Colour is applied via raw ANSI escape codes embedded in the string,
+    /// not `Text::color_range`. Zellij's table layer overrides cell foreground
+    /// via `table_cell_*` theme slots, which silently clobbers `color_range`.
+    /// ANSI escapes pass through verbatim — the same technique used by Zellij's
+    /// built-in `session-manager` plugin for its `<CURRENT SESSION>` marker.
     fn render_item(item: &SessionItem, max_width: usize, theme: &Option<Theme>) -> Text {
+        // Bold green for active sessions, bold yellow for resurrectable sessions.
+        const GREEN: &str = "\x1b[1;32m";
+        const YELLOW: &str = "\x1b[1;33m";
+        const RESET: &str = "\x1b[0m";
+
         match item {
             SessionItem::ExistingSession {
                 name,
@@ -232,40 +244,22 @@ impl PluginRenderer {
                 is_current,
             } => {
                 let prefix = if *is_current { "● " } else { "○ " };
-                let display_text = format!("{}{} ({})", prefix, name, directory);
-
-                let truncated_text = Self::get_truncated_text(&display_text, max_width);
-
-                if let Some(theme) = theme {
-                    if *is_current {
-                        theme.current_session(&truncated_text)
-                    } else {
-                        theme.available_session(&truncated_text)
-                    }
+                let plain = if directory.is_empty() {
+                    format!("{}{}", prefix, name)
                 } else {
-                    let mut text = Text::new(&truncated_text);
-                    if *is_current {
-                        text = text.color_range(2, ..);
-                    } else {
-                        text = text.color_range(3, ..);
-                    }
-                    text
-                }
+                    format!("{}{} ({})", prefix, name, directory)
+                };
+                let truncated = Self::get_truncated_text(&plain, max_width);
+                Text::new(format!("{}{}{}", GREEN, truncated, RESET))
             }
             SessionItem::ResurrectableSession { name, duration } => {
-                let display_text = format!(
-                    "↺ {} (created {} ago)",
+                let plain = format!(
+                    "↺ {} (resurrectable, created {} ago)",
                     name,
                     humantime::format_duration(*duration)
                 );
-
-                let truncated_text = Self::get_truncated_text(&display_text, max_width);
-
-                if let Some(theme) = theme {
-                    theme.available_session(&truncated_text)
-                } else {
-                    Text::new(&truncated_text).color_range(4, ..)
-                }
+                let truncated = Self::get_truncated_text(&plain, max_width);
+                Text::new(format!("{}{}{}", YELLOW, truncated, RESET))
             }
             SessionItem::Directory { path, .. } => {
                 let display_path = if path.len() > max_width && max_width > 10 {
