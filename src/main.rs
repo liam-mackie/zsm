@@ -12,6 +12,10 @@ use zellij_tile::prelude::*;
 
 register_plugin!(PluginState);
 
+/// How often to re-pull the machine-wide session list (seconds), matching the
+/// built-in session-manager's 1s cadence.
+const SESSION_REFRESH_INTERVAL_SECS: f64 = 1.0;
+
 impl ZellijPlugin for PluginState {
     fn load(&mut self, configuration: BTreeMap<String, String>) {
         self.initialize(configuration);
@@ -30,6 +34,7 @@ impl ZellijPlugin for PluginState {
             EventType::Key,
             EventType::RunCommandResult,
             EventType::PermissionRequestResult,
+            EventType::Timer,
         ]);
 
         // Don't fetch zoxide directories immediately - wait for permissions
@@ -50,8 +55,11 @@ impl ZellijPlugin for PluginState {
             Event::PermissionRequestResult(permission_status) => {
                 match permission_status {
                     PermissionStatus::Granted => {
-                        // Now that we have permissions, fetch zoxide directories
+                        // Now that we have permissions, fetch zoxide directories and
+                        // pull the machine-wide session list, then arm the refresh timer.
                         self.fetch_zoxide_directories();
+                        self.refresh_session_list();
+                        set_timeout(SESSION_REFRESH_INTERVAL_SECS);
                         should_render = true;
                     }
                     PermissionStatus::Denied => {
@@ -63,9 +71,19 @@ impl ZellijPlugin for PluginState {
                     }
                 }
             }
-            Event::SessionUpdate(session_infos, resurrectable_session_infos) => {
-                self.update_sessions(session_infos);
-                self.update_resurrectable_sessions(resurrectable_session_infos);
+            Event::SessionUpdate(_session_infos, _resurrectable_session_infos) => {
+                // As of Zellij 0.44 the SessionUpdate payload only contains the
+                // current session unless get_session_list() was just called, so we
+                // do NOT enumerate sessions from it (that would clobber the full
+                // list with a single entry). We must not call get_session_list()
+                // here either -- it triggers another SessionUpdate broadcast and
+                // would loop. Treat this purely as a "something changed" nudge; the
+                // timer-driven refresh_session_list() is the source of truth.
+                should_render = true;
+            }
+            Event::Timer(_elapsed) => {
+                self.refresh_session_list();
+                set_timeout(SESSION_REFRESH_INTERVAL_SECS);
                 should_render = true;
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {
@@ -144,6 +162,25 @@ impl ZellijPlugin for PluginState {
 }
 
 impl PluginState {
+    /// Pull the full machine-wide session list from the host.
+    ///
+    /// Since Zellij 0.44 the `SessionUpdate` event only carries the current
+    /// session by default; `get_session_list()` is the synchronous host command
+    /// that returns every live and resurrectable session (and refreshes the
+    /// server's cache as a side effect). This mirrors what the built-in
+    /// session-manager plugin does on a timer.
+    fn refresh_session_list(&mut self) {
+        match get_session_list() {
+            Ok(snapshot) => {
+                self.update_sessions(snapshot.live_sessions);
+                self.update_resurrectable_sessions(snapshot.resurrectable_sessions);
+            }
+            Err(e) => {
+                self.set_error(format!("Failed to read session list: {}", e));
+            }
+        }
+    }
+
     fn fetch_zoxide_directories(&mut self) {
         let mut context = BTreeMap::new();
         context.insert("zoxide_query".to_string(), "true".to_string());

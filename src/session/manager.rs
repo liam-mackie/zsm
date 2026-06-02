@@ -50,10 +50,10 @@ impl SessionManager {
                     .any(|(session_name, _)| session_name == &name)
                 {
                     // If the session is resurrectable, we should delete it
-                    delete_dead_session(&name);
+                    let _ = delete_dead_session(&name);
                 } else {
                     // Otherwise, we need to kill the session
-                    kill_sessions(&[&name]);
+                    let _ = kill_sessions(&[&name]);
                 }
             }
         }
