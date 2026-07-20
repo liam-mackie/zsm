@@ -1,2 +1,1 @@
-[build]
-target = "wasm32-wasip1"
+# Default target is native; use `cargo build --target wasm32-wasip1` for WASM builds

@@ -1,7 +1,7 @@
-pub mod components;
-pub mod renderer;
-pub mod theme;
+mod renderer;
+pub mod screens;
+mod theme;
+pub mod widgets;
 
-pub use components::Colors;
-pub use renderer::PluginRenderer;
+pub use renderer::render;
 pub use theme::Theme;
