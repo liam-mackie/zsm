@@ -50,6 +50,16 @@ impl SelectionState {
         self.index
     }
 
+    pub fn select_top(&mut self) {
+        if self.count > 0 {
+            self.index = Some(0);
+        }
+    }
+
+    pub fn set_index(&mut self, index: Option<usize>) {
+        self.index = index;
+    }
+
     pub fn clear(&mut self) {
         self.index = None;
     }

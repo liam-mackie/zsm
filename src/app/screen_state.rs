@@ -27,11 +27,13 @@ impl MainState {
             match direction {
                 Direction::Up => self.search.move_up(),
                 Direction::Down => self.search.move_down(),
+                Direction::Top => self.search.move_to_top(),
             }
         } else {
             match direction {
                 Direction::Up => self.selection.move_up(),
                 Direction::Down => self.selection.move_down(),
+                Direction::Top => self.selection.select_top(),
             }
         }
     }
@@ -85,6 +87,7 @@ impl NewSessionState {
             match direction {
                 Direction::Up => self.layout_selection.move_up(),
                 Direction::Down => self.layout_selection.move_down(),
+                Direction::Top => self.layout_selection.select_top(),
             }
         }
     }

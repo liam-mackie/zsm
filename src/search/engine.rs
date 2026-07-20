@@ -37,6 +37,11 @@ impl SearchEngine {
             return;
         }
 
+        // Capture before rebuilding results — old index into old results.
+        let prev_selected = self
+            .selected_item()
+            .map(|item| item.display_name().to_string());
+
         self.results = items
             .iter()
             .filter_map(|item| {
@@ -51,19 +56,44 @@ impl SearchEngine {
             })
             .collect();
 
+        // Sessions before directories. Sessions keep their input order (stable sort
+        // returns Equal). Directories sorted by fuzzy score, then alphabetically.
         self.results.sort_by(|a, b| {
             let a_session = a.item.is_session();
             let b_session = b.item.is_session();
             match (a_session, b_session) {
                 (true, false) => std::cmp::Ordering::Less,
                 (false, true) => std::cmp::Ordering::Greater,
-                _ => b.score.cmp(&a.score),
+                (true, true) => std::cmp::Ordering::Equal,
+                (false, false) => b
+                    .score
+                    .cmp(&a.score)
+                    .then_with(|| a.item.display_name().cmp(b.item.display_name())),
             }
         });
 
         self.selection.update_count(self.results.len());
-        if self.selection.index().is_none() && !self.results.is_empty() {
-            self.selection.select_first();
+
+        // Try to preserve the previously selected item across re-searches.
+        if let Some(ref name) = prev_selected {
+            if let Some(idx) = self
+                .results
+                .iter()
+                .position(|r| r.item.display_name() == name)
+            {
+                self.selection.set_index(Some(idx));
+                return;
+            }
+        }
+
+        // No previous selection or it was filtered out — default to first non-current.
+        if !self.results.is_empty() {
+            let first_non_current = self
+                .results
+                .iter()
+                .position(|r| !r.item.is_current());
+            self.selection
+                .set_index(Some(first_non_current.unwrap_or(0)));
         }
     }
 
@@ -75,6 +105,24 @@ impl SearchEngine {
     pub fn backspace(&mut self, items: &[DisplayItem]) {
         self.term.pop();
         self.search(items);
+    }
+
+    pub fn re_search(&mut self, items: &[DisplayItem]) {
+        if self.is_active() {
+            let prev_name = self
+                .selected_item()
+                .map(|item| item.display_name().to_string());
+            self.search(items);
+            if let Some(name) = prev_name {
+                if let Some(idx) = self
+                    .results
+                    .iter()
+                    .position(|r| r.item.display_name() == name)
+                {
+                    self.selection.set_index(Some(idx));
+                }
+            }
+        }
     }
 
     pub fn clear(&mut self) {
@@ -112,6 +160,10 @@ impl SearchEngine {
 
     pub fn move_down(&mut self) {
         self.selection.move_down();
+    }
+
+    pub fn move_to_top(&mut self) {
+        self.selection.select_top();
     }
 
     fn search_text(item: &DisplayItem) -> String {
@@ -251,6 +303,74 @@ mod tests {
     }
 
     #[test]
+    fn selection_skips_current_session() {
+        let mut engine = SearchEngine::default();
+        let current = DisplayItem::ExistingSession {
+            name: "current-session".to_string(),
+            directory: None,
+            is_current: true,
+        };
+        let items = vec![current, make_session("other-session")];
+        engine.add_char('s', &items);
+        assert_eq!(engine.results().len(), 2);
+        // Should select "other-session", not the current one
+        assert_eq!(
+            engine.selected_item().unwrap().display_name(),
+            "other-session"
+        );
+    }
+
+    #[test]
+    fn selection_falls_back_to_current_if_only_match() {
+        let mut engine = SearchEngine::default();
+        let current = DisplayItem::ExistingSession {
+            name: "current-session".to_string(),
+            directory: None,
+            is_current: true,
+        };
+        let items = vec![current];
+        engine.add_char('c', &items);
+        assert_eq!(engine.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn selection_preserved_when_current_filtered_out() {
+        let mut engine = SearchEngine::default();
+        let current = DisplayItem::ExistingSession {
+            name: "current-web".to_string(),
+            directory: None,
+            is_current: true,
+        };
+        let other = make_session("api-server");
+        // Both match 'e' — current at 0, other at 1. Auto-selects 1 (first non-current).
+        let items = vec![current, other];
+        engine.add_char('e', &items);
+        assert_eq!(
+            engine.selected_item().unwrap().display_name(),
+            "api-server"
+        );
+
+        // Type more to filter out current — "api-server" should stay selected
+        engine.add_char('r', &items);
+        assert_eq!(
+            engine.selected_item().unwrap().display_name(),
+            "api-server"
+        );
+    }
+
+    #[test]
+    fn move_to_top_selects_first() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("aa"), make_session("ab"), make_session("ac")];
+        engine.add_char('a', &items);
+        engine.move_down();
+        engine.move_down();
+        assert_eq!(engine.selected_index(), Some(2));
+        engine.move_to_top();
+        assert_eq!(engine.selected_index(), Some(0));
+    }
+
+    #[test]
     fn move_down_updates_selection() {
         let mut engine = SearchEngine::default();
         let items = vec![make_session("aa"), make_session("ab"), make_session("ac")];
@@ -305,5 +425,68 @@ mod tests {
         engine.add_char('b', &items);
         engine.add_char('c', &items);
         assert_eq!(engine.term(), "abc");
+    }
+
+    #[test]
+    fn sessions_preserve_input_order_in_search() {
+        let mut engine = SearchEngine::default();
+        let items = vec![
+            make_session("z-session"),
+            make_session("a-session"),
+            make_session("m-session"),
+        ];
+        engine.add_char('s', &items);
+        engine.add_char('e', &items);
+        let names: Vec<&str> = engine.results().iter().map(|r| r.item.display_name()).collect();
+        // Sessions keep their input order, not sorted by score or alphabetically
+        assert_eq!(names, vec!["z-session", "a-session", "m-session"]);
+    }
+
+    #[test]
+    fn directories_sorted_by_score_in_search() {
+        let mut engine = SearchEngine::default();
+        let items = vec![
+            make_directory("/home/user/zzz-project", "zzz-project"),
+            make_directory("/home/user/project", "project"),
+        ];
+        // "pro" should match "project" better than "zzz-project"
+        engine.add_char('p', &items);
+        engine.add_char('r', &items);
+        engine.add_char('o', &items);
+        if engine.results().len() == 2 {
+            assert!(engine.results()[0].score >= engine.results()[1].score);
+        }
+    }
+
+    #[test]
+    fn re_search_updates_results_preserves_selection() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("alpha"), make_session("apex")];
+        engine.add_char('a', &items);
+        // Select second result
+        engine.move_down();
+        let selected_name = engine.selected_item().unwrap().display_name().to_string();
+
+        // Re-search with an additional item
+        let new_items = vec![
+            make_session("alpha"),
+            make_session("apex"),
+            make_session("another"),
+        ];
+        engine.re_search(&new_items);
+
+        // Previously selected item should still be selected
+        assert_eq!(
+            engine.selected_item().unwrap().display_name(),
+            selected_name,
+        );
+    }
+
+    #[test]
+    fn re_search_noop_when_inactive() {
+        let mut engine = SearchEngine::default();
+        let items = vec![make_session("test")];
+        engine.re_search(&items);
+        assert!(engine.results().is_empty());
     }
 }

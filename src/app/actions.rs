@@ -20,6 +20,7 @@ pub enum Action {
 pub enum Direction {
     Up,
     Down,
+    Top,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

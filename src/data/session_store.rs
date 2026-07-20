@@ -19,6 +19,13 @@ impl SessionStore {
                 is_current: info.is_current_session,
             })
             .collect();
+        // Pin current session first, preserve Zellij's order for the rest.
+        if let Some(pos) = self.sessions.iter().position(|s| s.is_current) {
+            if pos > 0 {
+                let current = self.sessions.remove(pos);
+                self.sessions.insert(0, current);
+            }
+        }
     }
 
     pub fn update_resurrectable(&mut self, sessions: Vec<(String, Duration)>) {
@@ -143,8 +150,25 @@ mod tests {
         ];
         store.update(infos);
         assert_eq!(store.sessions().len(), 2);
-        assert_eq!(store.sessions()[0].name, "session1");
-        assert_eq!(store.sessions()[1].name, "session2");
+        // Current session pinned first, rest in original order
+        assert_eq!(store.sessions()[0].name, "session2");
+        assert!(store.sessions()[0].is_current);
+        assert_eq!(store.sessions()[1].name, "session1");
+    }
+
+    #[test]
+    fn update_preserves_order_for_non_current() {
+        let mut store = SessionStore::default();
+        let infos = vec![
+            make_session_info("zebra", false),
+            make_session_info("alpha", true),
+            make_session_info("middle", false),
+        ];
+        store.update(infos);
+        // Current pinned first, rest preserve Zellij's order
+        assert_eq!(store.sessions()[0].name, "alpha");
+        assert_eq!(store.sessions()[1].name, "zebra");
+        assert_eq!(store.sessions()[2].name, "middle");
     }
 
     #[test]

@@ -32,6 +32,7 @@ impl InputHandler {
         match key.bare_key {
             BareKey::Up if key.has_no_modifiers() => Action::Navigate(Direction::Up),
             BareKey::Down if key.has_no_modifiers() => Action::Navigate(Direction::Down),
+            BareKey::PageUp if key.has_no_modifiers() => Action::Navigate(Direction::Top),
             BareKey::Enter if key.has_no_modifiers() => Action::Select,
             BareKey::Enter if key.has_modifiers(&[KeyModifier::Ctrl]) => Action::QuickCreate,
             BareKey::Delete if key.has_no_modifiers() => Action::Delete,
@@ -70,6 +71,7 @@ impl InputHandler {
             BareKey::Char('c') if key.has_modifiers(&[KeyModifier::Ctrl]) => Action::ClearFolder,
             BareKey::Up if key.has_no_modifiers() => Action::Navigate(Direction::Up),
             BareKey::Down if key.has_no_modifiers() => Action::Navigate(Direction::Down),
+            BareKey::PageUp if key.has_no_modifiers() => Action::Navigate(Direction::Top),
             BareKey::Char(c) if key.has_no_modifiers() && c != '\n' => {
                 Action::Search(SearchAction::AddChar(c))
             }

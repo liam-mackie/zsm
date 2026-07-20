@@ -39,9 +39,12 @@ pub fn render_main_screen(state: &AppState, rows: usize, cols: usize, theme: &Th
     let list_items: Vec<ListItem> = items
         .iter()
         .enumerate()
-        .map(|(i, item)| ListItem {
-            text: format_item(item, theme),
-            is_selected: Some(i) == selected,
+        .map(|(i, item)| {
+            let indices = state.match_indices(i);
+            ListItem {
+                text: format_item(item, theme, indices),
+                is_selected: Some(i) == selected,
+            }
         })
         .collect();
 
@@ -55,25 +58,59 @@ pub fn render_main_screen(state: &AppState, rows: usize, cols: usize, theme: &Th
     };
     let help = theme.dim(help_text);
     print_text_with_coordinates(help, 0, help_row, None, None);
+
+    if state.config().dev_mode {
+        let version_str = build_version();
+        let x = cols.saturating_sub(version_str.len());
+        let version = Text::new(&version_str);
+        print_text_with_coordinates(version, x, help_row, None, None);
+    }
 }
 
-fn format_item(item: &DisplayItem, theme: &Theme) -> Text {
+fn build_version() -> String {
+    if cfg!(debug_assertions) {
+        format!("v{}-dev.{}", env!("CARGO_PKG_VERSION"), env!("BUILD_TIMESTAMP"))
+    } else {
+        format!("v{}", env!("CARGO_PKG_VERSION"))
+    }
+}
+
+fn format_item(item: &DisplayItem, theme: &Theme, match_indices: Option<&[usize]>) -> Text {
     match item {
         DisplayItem::ExistingSession {
             name, is_current, ..
         } => {
             let prefix = if *is_current { "● " } else { "○ " };
-            let text = format!("{}{}", prefix, name);
-            if *is_current {
-                theme.current_session(&text)
+            let display = format!("{}{}", prefix, name);
+            if let Some(indices) = match_indices {
+                // Only color matched characters so they stand out against default text.
+                let len = display.chars().count();
+                let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
+                Text::new(&display).color_indices(3, clamped)
+            } else if *is_current {
+                theme.current_session(&display)
             } else {
-                theme.session(&text)
+                theme.session(&display)
             }
         }
         DisplayItem::ResurrectableSession { name, duration } => {
-            let text = format!("↺ {} ({})", name, humantime::format_duration(*duration));
-            theme.dim(&text)
+            let display = format!("↺ {} ({})", name, humantime::format_duration(*duration));
+            if let Some(indices) = match_indices {
+                let len = display.chars().count();
+                let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
+                Text::new(&display).color_indices(3, clamped)
+            } else {
+                theme.dim(&display)
+            }
         }
-        DisplayItem::Directory { path, .. } => theme.content(path),
+        DisplayItem::Directory { path, .. } => {
+            if let Some(indices) = match_indices {
+                let len = path.chars().count();
+                let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
+                Text::new(path).color_indices(3, clamped)
+            } else {
+                theme.content(path)
+            }
+        }
     }
 }

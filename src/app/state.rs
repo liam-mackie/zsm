@@ -50,6 +50,7 @@ impl AppState {
     }
 
     pub fn update_sessions(&mut self, infos: Vec<SessionInfo>) {
+        let prev_selected = self.selected_item().map(|i| i.display_name().to_string());
         for info in &infos {
             if info.is_current_session {
                 self.current_session = Some(info.name.clone());
@@ -58,16 +59,17 @@ impl AppState {
             }
         }
         self.sessions.update(infos);
-        self.refresh_selection();
+        self.refresh_selection(prev_selected);
     }
 
     pub fn update_directories(&mut self, directories: Vec<Directory>) {
+        let prev_selected = self.selected_item().map(|i| i.display_name().to_string());
         let generator = SessionNameGenerator::new(
             self.config.session_separator.clone(),
             self.config.base_paths.clone(),
         );
         self.directories.update(directories, &generator);
-        self.refresh_selection();
+        self.refresh_selection(prev_selected);
     }
 
     pub fn handle_key(&mut self, key: zellij_tile::prelude::KeyWithModifier) -> bool {
@@ -355,16 +357,24 @@ impl AppState {
         true
     }
 
-    fn refresh_selection(&mut self) {
-        let count = DisplayList::build(
+    fn refresh_selection(&mut self, prev_selected: Option<String>) {
+        let items = DisplayList::build(
             &self.sessions,
             &self.directories,
             self.config.show_resurrectable_sessions,
             &self.config.session_separator,
-        )
-        .len();
+        );
         if let ScreenState::Main(s) = &mut self.screen {
-            s.refresh_selection(count);
+            // Re-run search with new data so results stay fresh and selection is preserved.
+            s.search.re_search(&items);
+
+            s.selection.update_count(items.len());
+            // Restore selection by identity so data refreshes don't jump to a different item.
+            if let Some(ref name) = prev_selected {
+                if let Some(idx) = items.iter().position(|i| i.display_name() == name) {
+                    s.selection.set_index(Some(idx));
+                }
+            }
         }
     }
 
@@ -450,6 +460,17 @@ impl AppState {
     pub fn selected_index(&self) -> Option<usize> {
         match &self.screen {
             ScreenState::Main(s) => s.selected_index(),
+            _ => None,
+        }
+    }
+
+    /// Returns fuzzy match character indices for a search result at the given position.
+    /// Only populated when search is active.
+    pub fn match_indices(&self, index: usize) -> Option<&[usize]> {
+        match &self.screen {
+            ScreenState::Main(s) if s.search.is_active() => {
+                s.search.results().get(index).map(|r| r.indices.as_slice())
+            }
             _ => None,
         }
     }
@@ -582,6 +603,42 @@ mod tests {
         state.apply_action(Action::Navigate(Direction::Down));
         state.apply_action(Action::Navigate(Direction::Up));
         assert_eq!(state.selected_index(), Some(0));
+    }
+
+    #[test]
+    fn selection_preserved_across_session_update() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("alpha", false),
+            make_session_info("beta", false),
+            make_session_info("gamma", false),
+        ]);
+        // Select "beta" (index 0=alpha, 1=beta)
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Navigate(Direction::Down));
+        assert_eq!(state.selected_item().unwrap().display_name(), "beta");
+
+        // Re-push sessions in a different order — "beta" should stay selected
+        state.update_sessions(vec![
+            make_session_info("gamma", false),
+            make_session_info("alpha", false),
+            make_session_info("beta", false),
+        ]);
+        assert_eq!(state.selected_item().unwrap().display_name(), "beta");
+    }
+
+    #[test]
+    fn sessions_current_first_rest_preserve_order() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("zebra", false),
+            make_session_info("alpha", true),
+            make_session_info("middle", false),
+        ]);
+        let items = state.display_items();
+        assert_eq!(items[0].display_name(), "alpha"); // current, pinned first
+        assert_eq!(items[1].display_name(), "zebra"); // original order preserved
+        assert_eq!(items[2].display_name(), "middle");
     }
 
     // Selection tests
