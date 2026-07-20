@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::app::AppState;
 use crate::integrations::parse_zoxide_output;
+use crate::naming::SOCKET_DIR_PROBE;
 use crate::ui;
 use zellij_tile::prelude::*;
 
@@ -37,6 +38,7 @@ impl ZellijPlugin for AppState {
                 match status {
                     PermissionStatus::Granted => {
                         fetch_zoxide_directories();
+                        probe_socket_dir();
                     }
                     PermissionStatus::Denied => {
                         self.set_error("Permissions denied".to_string());
@@ -58,6 +60,15 @@ impl ZellijPlugin for AppState {
                     } else {
                         let error = String::from_utf8_lossy(&stderr);
                         self.set_error(format!("zoxide error: {}", error));
+                    }
+                } else if context.contains_key("socket_dir_probe") {
+                    // On failure, stay on the conservative fallback budget.
+                    if exit_code == Some(0) {
+                        let output = String::from_utf8_lossy(&stdout);
+                        let socket_dir = output.trim();
+                        if !socket_dir.is_empty() {
+                            self.apply_socket_dir(socket_dir);
+                        }
                     }
                 }
                 true
@@ -97,4 +108,10 @@ fn fetch_zoxide_directories() {
     let mut context = BTreeMap::new();
     context.insert("zoxide_query".to_string(), "true".to_string());
     run_command(&["zoxide", "query", "-l", "-s"], context);
+}
+
+fn probe_socket_dir() {
+    let mut context = BTreeMap::new();
+    context.insert("socket_dir_probe".to_string(), "true".to_string());
+    run_command(&["sh", "-c", SOCKET_DIR_PROBE], context);
 }

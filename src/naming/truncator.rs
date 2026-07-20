@@ -1,44 +1,40 @@
-const MAX_NAME_LENGTH: usize = 29;
-
 pub struct SmartTruncator {
     separator: String,
+    max_length: usize,
 }
 
 impl SmartTruncator {
-    pub fn new(separator: String) -> Self {
-        Self { separator }
+    pub fn new(separator: String, max_length: usize) -> Self {
+        Self {
+            separator,
+            max_length,
+        }
     }
 
+    /// Fits the trailing `min_segments` path segments into `max_length` bytes.
+    /// The basename is the session's identity, so it is kept whole for as long
+    /// as possible: context segments are abbreviated first, then dropped from
+    /// the left, and the basename itself is only cut once it alone is too long.
     pub fn truncate(&self, segments: &[&str], min_segments: usize) -> String {
-        let mut result_segments = self.get_initial_segments(segments, min_segments);
-        let mut current_length = self.joined_length(&result_segments);
+        let mut parts: Vec<String> = segments[segments.len().saturating_sub(min_segments)..]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
 
-        if current_length > MAX_NAME_LENGTH {
-            result_segments = self.abbreviate_all(&result_segments);
-            current_length = self.joined_length(&result_segments);
-
-            while current_length > MAX_NAME_LENGTH && result_segments.len() > 1 {
-                result_segments.remove(0);
-                current_length = self.joined_length(&result_segments);
-            }
-
-            if current_length > MAX_NAME_LENGTH && result_segments.len() == 1 {
-                truncate_to_char_boundary(&mut result_segments[0], MAX_NAME_LENGTH);
+        if self.joined_length(&parts) > self.max_length && parts.len() > 1 {
+            let last = parts.len() - 1;
+            for part in &mut parts[..last] {
+                *part = abbreviate(part);
             }
         }
 
-        self.try_add_context(segments, min_segments, &mut result_segments);
+        while self.joined_length(&parts) > self.max_length && parts.len() > 1 {
+            parts.remove(0);
+        }
 
-        let mut result = result_segments.join(&self.separator);
-        truncate_to_char_boundary(&mut result, MAX_NAME_LENGTH);
+        let mut result = parts.join(&self.separator);
+        truncate_to_char_boundary(&mut result, self.max_length);
         result
-    }
-
-    fn get_initial_segments(&self, segments: &[&str], min_segments: usize) -> Vec<String> {
-        segments[segments.len().saturating_sub(min_segments)..]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
     }
 
     fn joined_length(&self, segments: &[String]) -> usize {
@@ -47,39 +43,6 @@ impl SmartTruncator {
         } else {
             segments.iter().map(|s| s.len()).sum::<usize>()
                 + (segments.len() - 1) * self.separator.len()
-        }
-    }
-
-    fn abbreviate_all(&self, segments: &[String]) -> Vec<String> {
-        segments.iter().map(|s| abbreviate(s)).collect()
-    }
-
-    fn try_add_context(
-        &self,
-        segments: &[&str],
-        min_segments: usize,
-        result_segments: &mut Vec<String>,
-    ) {
-        let start_idx = segments.len().saturating_sub(min_segments);
-        if start_idx == 0 {
-            return;
-        }
-
-        let mut left_index = start_idx - 1;
-        loop {
-            let abbreviated = abbreviate(segments[left_index]);
-            let mut test_segments = vec![abbreviated.clone()];
-            test_segments.extend(result_segments.iter().cloned());
-
-            if self.joined_length(&test_segments) <= MAX_NAME_LENGTH {
-                result_segments.insert(0, abbreviated);
-                if left_index == 0 {
-                    break;
-                }
-                left_index -= 1;
-            } else {
-                break;
-            }
         }
     }
 }
@@ -162,25 +125,49 @@ mod tests {
 
     #[test]
     fn truncator_respects_max_length() {
-        let truncator = SmartTruncator::new(".".to_string());
+        let truncator = SmartTruncator::new(".".to_string(), 29);
         let segments = vec!["very", "long", "path", "segments", "here"];
         let result = truncator.truncate(&segments, 2);
-        assert!(result.len() <= MAX_NAME_LENGTH);
+        assert!(result.len() <= 29);
+    }
+
+    #[test]
+    fn basename_kept_whole_while_context_abbreviates() {
+        let truncator = SmartTruncator::new(".".to_string(), 21);
+        let segments = vec!["Users", "liammackie", "g", "OctopusDeploy"];
+        let result = truncator.truncate(&segments, 3);
+        assert_eq!(result, "lia.g.OctopusDeploy");
+    }
+
+    #[test]
+    fn context_dropped_before_basename_is_cut() {
+        let truncator = SmartTruncator::new(".".to_string(), 8);
+        let segments = vec!["verylongcontext", "project"];
+        let result = truncator.truncate(&segments, 2);
+        assert_eq!(result, "project");
+    }
+
+    #[test]
+    fn basename_cut_as_last_resort() {
+        let truncator = SmartTruncator::new(".".to_string(), 5);
+        let segments = vec!["superduperproject"];
+        let result = truncator.truncate(&segments, 1);
+        assert_eq!(result, "super");
     }
 
     #[test]
     fn truncator_does_not_panic_on_multibyte_single_segment() {
-        let truncator = SmartTruncator::new(".".to_string());
+        let truncator = SmartTruncator::new(".".to_string(), 29);
         let segments = vec!["あ_あ_あ_あ_あ_あ_あ_あ"];
         let result = truncator.truncate(&segments, 2);
-        assert!(result.len() <= MAX_NAME_LENGTH);
+        assert!(result.len() <= 29);
     }
 
     #[test]
     fn truncator_does_not_panic_on_multibyte_joined_result() {
-        let truncator = SmartTruncator::new(".".to_string());
+        let truncator = SmartTruncator::new(".".to_string(), 29);
         let segments = vec!["ホーム", "プロジェクト", "アプリケーション"];
         let result = truncator.truncate(&segments, 2);
-        assert!(result.len() <= MAX_NAME_LENGTH);
+        assert!(result.len() <= 29);
     }
 }

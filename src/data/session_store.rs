@@ -1,24 +1,53 @@
 use crate::domain::{ResurrectableSession, Session};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 use zellij_tile::prelude::SessionInfo;
+
+/// Zellij learns about other sessions by polling their metadata cache files,
+/// so a live session can transiently vanish from one SessionUpdate and
+/// reappear in the next. Keep a session listed until it has been absent from
+/// this many consecutive updates (roughly one update per second).
+const MISSED_UPDATES_BEFORE_DROP: u8 = 3;
 
 #[derive(Debug, Default)]
 pub struct SessionStore {
     sessions: Vec<Session>,
+    // Consecutive updates each currently-listed session has been absent from.
+    // Sessions present in the latest update have no entry.
+    missed: HashMap<String, u8>,
     resurrectable: Vec<ResurrectableSession>,
     pending_deletion: Option<String>,
 }
 
 impl SessionStore {
     pub fn update(&mut self, session_infos: Vec<SessionInfo>) {
-        self.sessions = session_infos
+        let fresh: Vec<Session> = session_infos
             .into_iter()
             .map(|info| Session {
                 name: info.name,
                 is_current: info.is_current_session,
             })
             .collect();
+        let fresh_names: HashSet<String> = fresh.iter().map(|s| s.name.clone()).collect();
+
+        let mut merged = fresh;
+        let mut missed_next: HashMap<String, u8> = HashMap::new();
+
+        for (old_index, old) in std::mem::take(&mut self.sessions).into_iter().enumerate() {
+            if fresh_names.contains(&old.name) {
+                continue;
+            }
+            let missed = self.missed.get(&old.name).copied().unwrap_or(0) + 1;
+            if missed >= MISSED_UPDATES_BEFORE_DROP {
+                continue;
+            }
+            missed_next.insert(old.name.clone(), missed);
+            merged.insert(old_index.min(merged.len()), old);
+        }
+
+        self.sessions = merged;
+        self.missed = missed_next;
+
         // Pin current session first, preserve Zellij's order for the rest.
         if let Some(pos) = self.sessions.iter().position(|s| s.is_current) {
             if pos > 0 {
@@ -29,10 +58,30 @@ impl SessionStore {
     }
 
     pub fn update_resurrectable(&mut self, sessions: Vec<(String, Duration)>) {
+        // Dead is authoritative: stop extending grace to a session zellij now
+        // reports as resurrectable.
+        let dead: HashSet<&str> = sessions.iter().map(|(name, _)| name.as_str()).collect();
+        let missed = &self.missed;
+        self.sessions
+            .retain(|s| !missed.contains_key(&s.name) || !dead.contains(s.name.as_str()));
+        self.missed.retain(|name, _| !dead.contains(name.as_str()));
+
+        // The reverse also holds: a session listed as live shouldn't show a
+        // dead duplicate.
         self.resurrectable = sessions
             .into_iter()
+            .filter(|(name, _)| !self.sessions.iter().any(|s| &s.name == name))
             .map(|(name, duration)| ResurrectableSession { name, duration })
             .collect();
+    }
+
+    /// Immediate removal for sessions the user deleted through zsm — waiting
+    /// for the next SessionUpdate (or worse, ghost grace) would show a
+    /// just-deleted session as alive.
+    pub fn remove_session(&mut self, name: &str) {
+        self.sessions.retain(|s| s.name != name);
+        self.missed.remove(name);
+        self.resurrectable.retain(|s| s.name != name);
     }
 
     pub fn sessions(&self) -> &[Session] {
@@ -242,5 +291,121 @@ mod tests {
         ]);
         assert_eq!(store.resurrectable().len(), 2);
         assert_eq!(store.resurrectable()[0].name, "dead1");
+    }
+
+    // Flap-tolerance tests: zellij's view of other sessions is eventually
+    // consistent, so single-update dropouts must not empty the listing.
+
+    fn names(store: &SessionStore) -> Vec<&str> {
+        store.sessions().iter().map(|s| s.name.as_str()).collect()
+    }
+
+    #[test]
+    fn transiently_missing_session_stays_listed() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("other", false),
+        ]);
+        store.update(vec![make_session_info("current", true)]);
+        assert_eq!(names(&store), vec!["current", "other"]);
+    }
+
+    #[test]
+    fn session_missing_repeatedly_is_dropped() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("other", false),
+        ]);
+        for _ in 0..3 {
+            store.update(vec![make_session_info("current", true)]);
+        }
+        assert_eq!(names(&store), vec!["current"]);
+    }
+
+    #[test]
+    fn reappearing_session_resets_miss_count() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("other", false),
+        ]);
+        store.update(vec![make_session_info("current", true)]);
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("other", false),
+        ]);
+        // Two more misses shouldn't drop it — the counter restarted.
+        store.update(vec![make_session_info("current", true)]);
+        store.update(vec![make_session_info("current", true)]);
+        assert_eq!(names(&store), vec!["current", "other"]);
+    }
+
+    #[test]
+    fn ghost_keeps_list_position() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("middle", false),
+            make_session_info("last", false),
+        ]);
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("last", false),
+        ]);
+        assert_eq!(names(&store), vec!["current", "middle", "last"]);
+    }
+
+    #[test]
+    fn ghost_removed_when_it_turns_up_dead() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("other", false),
+        ]);
+        // "other" goes missing (ghosted), then the same update cycle reports
+        // it resurrectable.
+        store.update(vec![make_session_info("current", true)]);
+        store.update_resurrectable(vec![("other".to_string(), Duration::from_secs(1))]);
+        assert_eq!(names(&store), vec!["current"]);
+        assert!(store.is_resurrectable("other"));
+    }
+
+    #[test]
+    fn live_session_suppresses_dead_duplicate() {
+        let mut store = SessionStore::default();
+        store.update(vec![make_session_info("project", true)]);
+        store.update_resurrectable(vec![("project".to_string(), Duration::from_secs(1))]);
+        assert_eq!(names(&store), vec!["project"]);
+        assert!(store.resurrectable().is_empty());
+    }
+
+    #[test]
+    fn remove_session_is_immediate() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("current", true),
+            make_session_info("doomed", false),
+        ]);
+        store.update_resurrectable(vec![("dead".to_string(), Duration::from_secs(1))]);
+        store.remove_session("doomed");
+        store.remove_session("dead");
+        assert_eq!(names(&store), vec!["current"]);
+        assert!(store.resurrectable().is_empty());
+        // A ghost of the removed session must not reappear on the next flap.
+        store.update(vec![make_session_info("current", true)]);
+        assert_eq!(names(&store), vec!["current"]);
+    }
+
+    #[test]
+    fn current_session_pinned_first_with_ghosts() {
+        let mut store = SessionStore::default();
+        store.update(vec![
+            make_session_info("other", false),
+            make_session_info("current", true),
+        ]);
+        store.update(vec![make_session_info("current", true)]);
+        assert_eq!(names(&store)[0], "current");
     }
 }

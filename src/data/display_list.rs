@@ -94,7 +94,7 @@ mod tests {
     use std::time::Duration;
 
     fn make_generator() -> SessionNameGenerator {
-        SessionNameGenerator::new(".".to_string(), vec![])
+        SessionNameGenerator::new(".".to_string(), vec![], crate::naming::DEFAULT_MAX_NAME_LENGTH)
     }
 
     fn setup_stores() -> (SessionStore, DirectoryStore) {

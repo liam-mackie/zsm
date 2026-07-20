@@ -1,5 +1,6 @@
 use super::*;
 use crate::domain::Directory;
+use crate::naming::DEFAULT_MAX_NAME_LENGTH;
 
 fn make_dir(path: &str) -> Directory {
     Directory {
@@ -11,7 +12,7 @@ fn make_dir(path: &str) -> Directory {
 
 #[test]
 fn nested_directories_get_context() {
-    let gen = SessionNameGenerator::new(".".to_string(), vec![]);
+    let gen = SessionNameGenerator::new(".".to_string(), vec![], DEFAULT_MAX_NAME_LENGTH);
     let mut dirs = vec![
         make_dir("/home/user/project"),
         make_dir("/home/user/project/frontend"),
@@ -28,7 +29,7 @@ fn nested_directories_get_context() {
 
 #[test]
 fn triple_conflict_resolution() {
-    let gen = SessionNameGenerator::new(".".to_string(), vec![]);
+    let gen = SessionNameGenerator::new(".".to_string(), vec![], DEFAULT_MAX_NAME_LENGTH);
     let mut dirs = vec![
         make_dir("/home/user/work/client/app"),
         make_dir("/home/user/personal/client/app"),
@@ -49,7 +50,7 @@ fn triple_conflict_resolution() {
 
 #[test]
 fn custom_separator() {
-    let gen = SessionNameGenerator::new("-".to_string(), vec![]);
+    let gen = SessionNameGenerator::new("-".to_string(), vec![], DEFAULT_MAX_NAME_LENGTH);
     let mut dirs = vec![
         make_dir("/home/user/work/project"),
         make_dir("/home/user/personal/project"),
@@ -65,6 +66,7 @@ fn base_paths_are_stripped() {
     let gen = SessionNameGenerator::new(
         ".".to_string(),
         vec!["/home/user/projects".to_string()],
+        DEFAULT_MAX_NAME_LENGTH,
     );
     let mut dirs = vec![make_dir("/home/user/projects/myapp")];
     gen.generate_names(&mut dirs);
@@ -74,7 +76,7 @@ fn base_paths_are_stripped() {
 
 #[test]
 fn long_names_are_truncated() {
-    let gen = SessionNameGenerator::new(".".to_string(), vec![]);
+    let gen = SessionNameGenerator::new(".".to_string(), vec![], DEFAULT_MAX_NAME_LENGTH);
     let mut dirs = vec![
         make_dir("/home/user/really-long-directory-name/another-very-long-name/project"),
         make_dir("/home/user/different-long-path/another-very-long-name/project"),
@@ -83,7 +85,7 @@ fn long_names_are_truncated() {
 
     for dir in &dirs {
         assert!(
-            dir.session_name.len() <= 29,
+            dir.session_name.len() <= DEFAULT_MAX_NAME_LENGTH,
             "name too long: {} ({})",
             dir.session_name,
             dir.session_name.len()

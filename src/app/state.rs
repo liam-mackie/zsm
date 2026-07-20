@@ -6,7 +6,10 @@ use crate::data::{DirectoryStore, DisplayList, SessionStore};
 use crate::domain::{Config, Directory, DisplayItem, TargetMode};
 use crate::input::{InputContext, InputHandler};
 use crate::integrations::{zellij_delete_dead_session, zellij_pipe_message_to_plugin};
-use crate::naming::SessionNameGenerator;
+use crate::naming::{
+    max_generated_name_len, name_budget_for_socket_dir, SessionNameGenerator,
+    FALLBACK_NAME_BUDGET,
+};
 use crate::target::{create_target, Target};
 
 use super::actions::{Direction, SearchAction};
@@ -24,6 +27,7 @@ pub struct AppState {
     current_session: Option<String>,
     layouts: Vec<LayoutInfo>,
     request_ids: Vec<String>,
+    name_budget: usize,
 }
 
 impl Default for AppState {
@@ -39,6 +43,7 @@ impl Default for AppState {
             current_session: None,
             layouts: Vec::new(),
             request_ids: Vec::new(),
+            name_budget: FALLBACK_NAME_BUDGET,
         }
     }
 }
@@ -70,12 +75,30 @@ impl AppState {
 
     pub fn update_directories(&mut self, directories: Vec<Directory>) {
         let prev_selected = self.selected_item().map(|i| i.display_name().to_string());
-        let generator = SessionNameGenerator::new(
+        self.directories.update(directories, &self.name_generator());
+        self.refresh_selection(prev_selected);
+    }
+
+    /// Result of the socket dir probe: the real IPC path limit for this
+    /// machine. Regenerates names since the zoxide result may have landed
+    /// first, under the conservative fallback budget.
+    pub fn apply_socket_dir(&mut self, socket_dir: &str) {
+        let budget = name_budget_for_socket_dir(socket_dir);
+        if budget == self.name_budget {
+            return;
+        }
+        self.name_budget = budget;
+        let prev_selected = self.selected_item().map(|i| i.display_name().to_string());
+        self.directories.regenerate_names(&self.name_generator());
+        self.refresh_selection(prev_selected);
+    }
+
+    fn name_generator(&self) -> SessionNameGenerator {
+        SessionNameGenerator::new(
             self.config.session_separator.clone(),
             self.config.base_paths.clone(),
-        );
-        self.directories.update(directories, &generator);
-        self.refresh_selection(prev_selected);
+            max_generated_name_len(self.name_budget),
+        )
     }
 
     pub fn handle_key(&mut self, key: zellij_tile::prelude::KeyWithModifier) -> bool {
@@ -260,8 +283,12 @@ impl AppState {
             } else {
                 self.target.delete(&name)
             };
-            if let Err(msg) = result {
-                self.set_error(msg);
+            match result {
+                Err(msg) => self.set_error(msg),
+                Ok(()) => {
+                    self.sessions.remove_session(&name);
+                    self.refresh_selection(None);
+                }
             }
         }
         true
@@ -284,7 +311,13 @@ impl AppState {
                 s.handle_search(action, &items);
             }
             ScreenState::NewSession(s) if s.entering_name => match action {
-                SearchAction::AddChar(c) => s.name.push(c),
+                SearchAction::AddChar(c) => {
+                    // The name becomes part of a unix socket path; zellij
+                    // rejects sessions whose names blow the path limit.
+                    if s.name.len() + c.len_utf8() <= self.name_budget {
+                        s.name.push(c);
+                    }
+                }
                 SearchAction::Backspace => {
                     s.name.pop();
                 }
@@ -852,6 +885,85 @@ mod tests {
             zellij_tile::prelude::BareKey::Esc,
         ));
         assert!(state.error().is_none());
+    }
+
+    // Session flap tests
+    #[test]
+    fn transiently_missing_sessions_stay_in_display_list() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("current", true),
+            make_session_info("main", false),
+            make_session_info("Box", false),
+        ]);
+        // A flapped update that only knows about the current session.
+        state.update_sessions(vec![make_session_info("current", true)]);
+
+        let names: Vec<String> = state
+            .display_items()
+            .iter()
+            .map(|i| i.display_name().to_string())
+            .collect();
+        assert!(names.contains(&"main".to_string()));
+        assert!(names.contains(&"Box".to_string()));
+    }
+
+    #[test]
+    fn confirmed_delete_removes_session_from_display_immediately() {
+        let (mut state, mock) = make_app_with_mock();
+        state.update_sessions(vec![
+            make_session_info("current", true),
+            make_session_info("doomed", false),
+        ]);
+        state.apply_action(Action::Navigate(Direction::Down));
+        state.apply_action(Action::Navigate(Direction::Down));
+        assert_eq!(state.selected_item().unwrap().display_name(), "doomed");
+        state.apply_action(Action::Delete);
+        state.apply_action(Action::ConfirmDelete);
+        assert_eq!(mock.deleted_sessions(), vec!["doomed"]);
+        assert!(state
+            .display_items()
+            .iter()
+            .all(|i| i.display_name() != "doomed"));
+    }
+
+    // Socket budget tests
+    #[test]
+    fn socket_dir_probe_regenerates_names_within_budget() {
+        let (mut state, _) = make_app_with_mock();
+        state.update_directories(vec![
+            make_directory("/Users/liammackie/g/OctopusDeploy", 100.0),
+            make_directory("/Users/liammackie/worktrees/OctopusDeploy", 50.0),
+        ]);
+
+        // A socket dir long enough to leave only 11 bytes for names (8 after
+        // increment headroom).
+        let long_dir = format!("/{}", "x".repeat(91));
+        state.apply_socket_dir(&long_dir);
+
+        for item in state.display_items() {
+            if let DisplayItem::Directory { session_name, .. } = item {
+                assert!(
+                    session_name.len() <= 8,
+                    "name over budget: {} ({})",
+                    session_name,
+                    session_name.len()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn typed_session_name_is_clamped_to_budget() {
+        let (mut state, _) = make_app_with_mock();
+        let mut new_session = NewSessionState::new(String::new(), None, 0);
+        new_session.entering_name = true;
+        state.screen = ScreenState::NewSession(new_session);
+
+        for _ in 0..100 {
+            state.apply_action(Action::Search(SearchAction::AddChar('a')));
+        }
+        assert_eq!(state.new_session_name().len(), FALLBACK_NAME_BUDGET);
     }
 
     // Selected item tests

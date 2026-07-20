@@ -13,6 +13,11 @@ impl DirectoryStore {
         self.directories = directories;
     }
 
+    /// Re-derives session names in place, e.g. after the name budget changes.
+    pub fn regenerate_names(&mut self, generator: &SessionNameGenerator) {
+        generator.generate_names(&mut self.directories);
+    }
+
     pub fn directories(&self) -> &[Directory] {
         &self.directories
     }
@@ -33,7 +38,7 @@ mod tests {
     use super::*;
 
     fn make_generator() -> SessionNameGenerator {
-        SessionNameGenerator::new(".".to_string(), vec![])
+        SessionNameGenerator::new(".".to_string(), vec![], crate::naming::DEFAULT_MAX_NAME_LENGTH)
     }
 
     fn make_dir(path: &str, ranking: f64) -> Directory {
