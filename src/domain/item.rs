@@ -18,6 +18,28 @@ pub enum DisplayItem {
 }
 
 impl DisplayItem {
+    // Search matches against this exact string, so render it verbatim or
+    // highlight indices won't line up.
+    pub fn display_text(&self) -> String {
+        match self {
+            Self::ExistingSession {
+                name,
+                directory,
+                is_current,
+            } => {
+                let prefix = if *is_current { "● " } else { "○ " };
+                match directory {
+                    Some(dir) => format!("{}{} ({})", prefix, name, dir),
+                    None => format!("{}{}", prefix, name),
+                }
+            }
+            Self::ResurrectableSession { name, duration } => {
+                format!("↺ {} ({})", name, humantime::format_duration(*duration))
+            }
+            Self::Directory { path, .. } => path.clone(),
+        }
+    }
+
     pub fn display_name(&self) -> &str {
         match self {
             Self::ExistingSession { name, .. } => name,

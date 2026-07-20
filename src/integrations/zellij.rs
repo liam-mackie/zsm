@@ -39,12 +39,16 @@ pub fn zellij_switch_session_with_layout(
 
 #[cfg(not(test))]
 pub fn zellij_kill_sessions(names: &[String]) {
-    kill_sessions(names);
+    if let Err(e) = kill_sessions(names) {
+        eprintln!("zsm: failed to kill sessions: {e}");
+    }
 }
 
 #[cfg(not(test))]
 pub fn zellij_delete_dead_session(name: &str) {
-    delete_dead_session(name);
+    if let Err(e) = delete_dead_session(name) {
+        eprintln!("zsm: failed to delete dead session: {e}");
+    }
 }
 
 #[cfg(not(test))]

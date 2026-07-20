@@ -137,7 +137,7 @@ mod tests {
         let mock = MockTarget::new();
         mock.create("test", Path::new("/test"), None);
         mock.switch_to("session");
-        mock.delete("old");
+        mock.delete("old").unwrap();
         mock.hide();
 
         mock.reset();

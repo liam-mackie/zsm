@@ -23,16 +23,14 @@ impl SmartTruncator {
             }
 
             if current_length > MAX_NAME_LENGTH && result_segments.len() == 1 {
-                result_segments[0].truncate(MAX_NAME_LENGTH);
+                truncate_to_char_boundary(&mut result_segments[0], MAX_NAME_LENGTH);
             }
         }
 
         self.try_add_context(segments, min_segments, &mut result_segments);
 
         let mut result = result_segments.join(&self.separator);
-        if result.len() > MAX_NAME_LENGTH {
-            result.truncate(MAX_NAME_LENGTH);
-        }
+        truncate_to_char_boundary(&mut result, MAX_NAME_LENGTH);
         result
     }
 
@@ -84,6 +82,18 @@ impl SmartTruncator {
             }
         }
     }
+}
+
+// String::truncate panics if the byte offset splits a multibyte character
+fn truncate_to_char_boundary(s: &mut String, max_bytes: usize) {
+    if s.len() <= max_bytes {
+        return;
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    s.truncate(end);
 }
 
 pub fn abbreviate(segment: &str) -> String {
@@ -154,6 +164,22 @@ mod tests {
     fn truncator_respects_max_length() {
         let truncator = SmartTruncator::new(".".to_string());
         let segments = vec!["very", "long", "path", "segments", "here"];
+        let result = truncator.truncate(&segments, 2);
+        assert!(result.len() <= MAX_NAME_LENGTH);
+    }
+
+    #[test]
+    fn truncator_does_not_panic_on_multibyte_single_segment() {
+        let truncator = SmartTruncator::new(".".to_string());
+        let segments = vec!["あ_あ_あ_あ_あ_あ_あ_あ"];
+        let result = truncator.truncate(&segments, 2);
+        assert!(result.len() <= MAX_NAME_LENGTH);
+    }
+
+    #[test]
+    fn truncator_does_not_panic_on_multibyte_joined_result() {
+        let truncator = SmartTruncator::new(".".to_string());
+        let segments = vec!["ホーム", "プロジェクト", "アプリケーション"];
         let result = truncator.truncate(&segments, 2);
         assert!(result.len() <= MAX_NAME_LENGTH);
     }

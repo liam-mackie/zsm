@@ -10,7 +10,7 @@ use crate::naming::SessionNameGenerator;
 use crate::target::{create_target, Target};
 
 use super::actions::{Direction, SearchAction};
-use super::screen_state::{MainState, NewSessionState, ScreenState};
+use super::screen_state::{NewSessionState, ScreenState};
 use super::{Action, Screen};
 
 pub struct AppState {
@@ -62,6 +62,12 @@ impl AppState {
         self.refresh_selection(prev_selected);
     }
 
+    pub fn update_resurrectable(&mut self, sessions: Vec<(String, std::time::Duration)>) {
+        let prev_selected = self.selected_item().map(|i| i.display_name().to_string());
+        self.sessions.update_resurrectable(sessions);
+        self.refresh_selection(prev_selected);
+    }
+
     pub fn update_directories(&mut self, directories: Vec<Directory>) {
         let prev_selected = self.selected_item().map(|i| i.display_name().to_string());
         let generator = SessionNameGenerator::new(
@@ -84,10 +90,6 @@ impl AppState {
                 _ => false,
             },
             has_pending_deletion: self.sessions.pending_deletion().is_some(),
-            session_name_empty: match &self.screen {
-                ScreenState::NewSession(s) => s.name.is_empty(),
-                _ => true,
-            },
             entering_name: match &self.screen {
                 ScreenState::NewSession(s) => s.entering_name,
                 _ => true,
@@ -197,7 +199,7 @@ impl AppState {
             }
         }
 
-        self.screen = ScreenState::Main(MainState::default());
+        self.screen = ScreenState::default();
         true
     }
 
@@ -298,7 +300,7 @@ impl AppState {
     fn go_to_screen(&mut self, screen: Screen) -> bool {
         match screen {
             Screen::Main => {
-                self.screen = ScreenState::Main(MainState::default());
+                self.screen = ScreenState::default();
             }
             Screen::NewSession => {
                 // Creates a blank NewSessionState (no folder). The intended flow is:
@@ -320,6 +322,12 @@ impl AppState {
 
         let request_id = Uuid::new_v4().to_string();
         self.request_ids.push(request_id.clone());
+        // Cancelled filepickers never reply, so cap the backlog rather than leak.
+        const MAX_PENDING_REQUESTS: usize = 8;
+        if self.request_ids.len() > MAX_PENDING_REQUESTS {
+            let excess = self.request_ids.len() - MAX_PENDING_REQUESTS;
+            self.request_ids.drain(..excess);
+        }
 
         let mut config = BTreeMap::new();
         config.insert("request_id".to_string(), request_id.clone());
@@ -541,8 +549,10 @@ mod tests {
 
     fn make_app_with_mock() -> (AppState, MockTarget) {
         let mock = MockTarget::new();
-        let mut state = AppState::default();
-        state.target = Box::new(mock.clone());
+        let state = AppState {
+            target: Box::new(mock.clone()),
+            ..Default::default()
+        };
         (state, mock)
     }
 
@@ -704,8 +714,10 @@ mod tests {
             fn hide(&self) {}
         }
 
-        let mut state = AppState::default();
-        state.target = Box::new(FailTarget);
+        let mut state = AppState {
+            target: Box::new(FailTarget),
+            ..Default::default()
+        };
         state.update_sessions(vec![make_session_info("to-delete", false)]);
         state.apply_action(Action::Navigate(Direction::Down));
         state.apply_action(Action::Delete);

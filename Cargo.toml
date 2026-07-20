@@ -20,9 +20,8 @@ name = "zsm"
 path = "src/main.rs"
 
 [dependencies]
-zellij-tile = "0.43.1"
+zellij-tile = "0.44.3"
 serde = { version = "1.0.164", features = ["derive"] }
 fuzzy-matcher = "0.3.7"
 uuid = { version = "1.8.0", features = ["v4"] }
 humantime = "2.2.0"
-zellij-utils = "0.43.1"

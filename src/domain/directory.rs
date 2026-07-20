@@ -38,11 +38,9 @@ mod tests {
 
     #[test]
     fn directories_sorted_by_ranking_descending() {
-        let mut dirs = vec![
-            make_dir("a", 10.0),
+        let mut dirs = [make_dir("a", 10.0),
             make_dir("b", 100.0),
-            make_dir("c", 50.0),
-        ];
+            make_dir("c", 50.0)];
         dirs.sort();
         assert_eq!(dirs[0].path, "b");
         assert_eq!(dirs[1].path, "c");

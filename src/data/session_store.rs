@@ -110,27 +110,31 @@ mod tests {
 
     #[test]
     fn generate_incremented_adds_suffix_when_taken() {
-        let mut store = SessionStore::default();
-        store.sessions = vec![Session {
-            name: "project".to_string(),
-            is_current: false,
-        }];
+        let store = SessionStore {
+            sessions: vec![Session {
+                name: "project".to_string(),
+                is_current: false,
+            }],
+            ..Default::default()
+        };
         assert_eq!(store.generate_incremented_name("project", "."), "project.2");
     }
 
     #[test]
     fn generate_incremented_finds_next_available() {
-        let mut store = SessionStore::default();
-        store.sessions = vec![
-            Session {
-                name: "project".to_string(),
-                is_current: false,
-            },
-            Session {
-                name: "project.2".to_string(),
-                is_current: false,
-            },
-        ];
+        let store = SessionStore {
+            sessions: vec![
+                Session {
+                    name: "project".to_string(),
+                    is_current: false,
+                },
+                Session {
+                    name: "project.2".to_string(),
+                    is_current: false,
+                },
+            ],
+            ..Default::default()
+        };
         assert_eq!(store.generate_incremented_name("project", "."), "project.3");
     }
 

@@ -7,18 +7,10 @@ use crate::search::{SearchEngine, SelectionState};
 
 // ─── MainState ───────────────────────────────────────────────────────────────
 
+#[derive(Default)]
 pub struct MainState {
     pub search: SearchEngine,
     pub selection: SelectionState,
-}
-
-impl Default for MainState {
-    fn default() -> Self {
-        Self {
-            search: SearchEngine::default(),
-            selection: SelectionState::default(),
-        }
-    }
 }
 
 impl MainState {
@@ -130,13 +122,14 @@ impl NewSessionState {
 // ─── ScreenState ─────────────────────────────────────────────────────────────
 
 pub enum ScreenState {
-    Main(MainState),
+    // Boxed: MainState (via SearchEngine's matcher) dwarfs NewSessionState
+    Main(Box<MainState>),
     NewSession(NewSessionState),
 }
 
 impl Default for ScreenState {
     fn default() -> Self {
-        ScreenState::Main(MainState::default())
+        ScreenState::Main(Box::default())
     }
 }
 

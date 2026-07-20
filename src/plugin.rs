@@ -46,10 +46,7 @@ impl ZellijPlugin for AppState {
             }
             Event::SessionUpdate(infos, resurrectable) => {
                 self.update_sessions(infos);
-                let durations: Vec<_> = resurrectable.into_iter().collect();
-                for (name, duration) in durations {
-                    let _ = (name, duration);
-                }
+                self.update_resurrectable(resurrectable);
                 true
             }
             Event::RunCommandResult(exit_code, stdout, stderr, context) => {

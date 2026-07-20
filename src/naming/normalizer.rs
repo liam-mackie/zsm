@@ -29,12 +29,10 @@ impl PathNormalizer {
             let normalized_base = base_path.trim_end_matches('/');
 
             if path.starts_with(normalized_base) && self.is_directory_boundary(path, normalized_base)
-            {
-                if normalized_base.len() > longest_match_len {
+                && normalized_base.len() > longest_match_len {
                     longest_match = Some(base_path);
                     longest_match_len = normalized_base.len();
                 }
-            }
         }
 
         (longest_match, longest_match_len)

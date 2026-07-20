@@ -74,6 +74,9 @@ keybinds clear-defaults=true {
                 floating true
                 move_to_focused_tab true
                 
+                // Create sessions (default) or tabs in the current session
+                mode "session"
+                
                 // Default layout for Ctrl+Enter quick creation
                 default_layout "development"
             
@@ -96,6 +99,7 @@ keybinds clear-defaults=true {
 
 | Option                        | Description                               | Default | Example                                 |
 |-------------------------------|-------------------------------------------|---------|-----------------------------------------|
+| `mode`                        | What Enter creates: `"session"` creates/switches Zellij sessions, `"tab"` creates/switches tabs in the current session (tabs can't set a cwd or be deleted from ZSM) | `"session"` | `"tab"`                     |
 | `default_layout`              | Layout name for Ctrl+Enter quick creation | None    | `"development"`                         |
 | `session_separator`           | Character used in session names           | `"."`   | `"-"` or `"_"`                          |
 | `show_resurrectable_sessions` | Show sessions that can be resurrected     | `false` | `true`                                  |

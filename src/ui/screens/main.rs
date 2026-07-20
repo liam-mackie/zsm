@@ -76,41 +76,21 @@ fn build_version() -> String {
 }
 
 fn format_item(item: &DisplayItem, theme: &Theme, match_indices: Option<&[usize]>) -> Text {
+    let display = item.display_text();
+
+    if let Some(indices) = match_indices {
+        // Only color matched characters so they stand out against default text.
+        let len = display.chars().count();
+        let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
+        return Text::new(&display).color_indices(3, clamped);
+    }
+
     match item {
         DisplayItem::ExistingSession {
-            name, is_current, ..
-        } => {
-            let prefix = if *is_current { "● " } else { "○ " };
-            let display = format!("{}{}", prefix, name);
-            if let Some(indices) = match_indices {
-                // Only color matched characters so they stand out against default text.
-                let len = display.chars().count();
-                let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
-                Text::new(&display).color_indices(3, clamped)
-            } else if *is_current {
-                theme.current_session(&display)
-            } else {
-                theme.session(&display)
-            }
-        }
-        DisplayItem::ResurrectableSession { name, duration } => {
-            let display = format!("↺ {} ({})", name, humantime::format_duration(*duration));
-            if let Some(indices) = match_indices {
-                let len = display.chars().count();
-                let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
-                Text::new(&display).color_indices(3, clamped)
-            } else {
-                theme.dim(&display)
-            }
-        }
-        DisplayItem::Directory { path, .. } => {
-            if let Some(indices) = match_indices {
-                let len = path.chars().count();
-                let clamped: Vec<usize> = indices.iter().copied().filter(|&i| i < len).collect();
-                Text::new(path).color_indices(3, clamped)
-            } else {
-                theme.content(path)
-            }
-        }
+            is_current: true, ..
+        } => theme.current_session(&display),
+        DisplayItem::ExistingSession { .. } => theme.session(&display),
+        DisplayItem::ResurrectableSession { .. } => theme.dim(&display),
+        DisplayItem::Directory { .. } => theme.content(&display),
     }
 }

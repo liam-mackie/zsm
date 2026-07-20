@@ -59,9 +59,7 @@ impl InputHandler {
             BareKey::Enter if key.has_no_modifiers() => Action::Select,
             BareKey::Enter if key.has_modifiers(&[KeyModifier::Ctrl]) => Action::QuickCreate,
             BareKey::Esc if key.has_no_modifiers() => {
-                if context.session_name_empty && context.entering_name {
-                    Action::GoToScreen(Screen::Main)
-                } else if context.entering_name {
+                if context.entering_name {
                     Action::GoToScreen(Screen::Main)
                 } else {
                     Action::Search(SearchAction::Clear)
@@ -84,7 +82,6 @@ impl InputHandler {
 pub struct InputContext {
     pub is_searching: bool,
     pub has_pending_deletion: bool,
-    pub session_name_empty: bool,
     pub entering_name: bool,
 }
 
@@ -93,7 +90,6 @@ impl Default for InputContext {
         Self {
             is_searching: false,
             has_pending_deletion: false,
-            session_name_empty: true,
             entering_name: true,
         }
     }
@@ -301,7 +297,6 @@ mod tests {
     #[test]
     fn new_session_escape_with_empty_name_goes_to_main() {
         let context = InputContext {
-            session_name_empty: true,
             entering_name: true,
             ..Default::default()
         };

@@ -45,7 +45,7 @@ impl SearchEngine {
         self.results = items
             .iter()
             .filter_map(|item| {
-                let text = Self::search_text(item);
+                let text = item.display_text();
                 self.matcher
                     .fuzzy_indices(&text, &self.term)
                     .map(|(score, indices)| SearchResult {
@@ -164,28 +164,6 @@ impl SearchEngine {
 
     pub fn move_to_top(&mut self) {
         self.selection.select_top();
-    }
-
-    fn search_text(item: &DisplayItem) -> String {
-        match item {
-            DisplayItem::ExistingSession {
-                name,
-                directory,
-                is_current,
-            } => {
-                let prefix = if *is_current { "● " } else { "○ " };
-                let dir = directory.as_deref().unwrap_or("");
-                format!("{}{} ({})", prefix, name, dir)
-            }
-            DisplayItem::ResurrectableSession { name, duration } => {
-                format!(
-                    "↺ {} (created {} ago)",
-                    name,
-                    humantime::format_duration(*duration)
-                )
-            }
-            DisplayItem::Directory { path, .. } => path.clone(),
-        }
     }
 }
 
