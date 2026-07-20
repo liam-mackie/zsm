@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/liam-mackie/zsm/compare/v0.4.1...v0.5.0) (2026-07-20)
+
+
+### 🧹 Miscellaneous Chores
+
+* release 0.5.0 ([fac6630](https://github.com/liam-mackie/zsm/commit/fac66300cf98f2b040f11a01f4a2be7921791761))
+
 ## [0.4.1](https://github.com/liam-mackie/zsm/compare/v0.4.0...v0.4.1) (2025-10-27)
 
 
