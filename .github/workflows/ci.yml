@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: wasm32-wasip1
+          components: clippy
+
+      - name: Run tests
+        run: cargo test --lib
+
+      - name: Run clippy
+        run: cargo clippy --lib --tests -- -D warnings
+
+      - name: Build WASM plugin
+        run: cargo build --target wasm32-wasip1 --release

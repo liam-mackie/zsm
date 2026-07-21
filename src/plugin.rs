@@ -1,0 +1,139 @@
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use crate::app::AppState;
+use crate::integrations::parse_zoxide_output;
+use crate::naming::SOCKET_DIR_PROBE;
+use crate::ui;
+use zellij_tile::prelude::*;
+
+impl ZellijPlugin for AppState {
+    fn load(&mut self, configuration: BTreeMap<String, String>) {
+        self.initialize(configuration);
+
+        request_permission(&[
+            PermissionType::RunCommands,
+            PermissionType::ReadApplicationState,
+            PermissionType::ChangeApplicationState,
+            PermissionType::MessageAndLaunchOtherPlugins,
+        ]);
+
+        subscribe(&[
+            EventType::ModeUpdate,
+            EventType::SessionUpdate,
+            EventType::Key,
+            EventType::RunCommandResult,
+            EventType::PermissionRequestResult,
+            EventType::Visible,
+        ]);
+    }
+
+    fn update(&mut self, event: Event) -> bool {
+        match event {
+            Event::ModeUpdate(mode_info) => {
+                self.set_colors(mode_info.style.colors.into());
+                true
+            }
+            Event::Key(key) => self.handle_key(key),
+            Event::PermissionRequestResult(status) => {
+                match status {
+                    PermissionStatus::Granted => {
+                        self.mark_permissions_granted();
+                        fetch_zoxide_directories();
+                        probe_socket_dir();
+                        // A new session's server starts with an empty peer-session
+                        // cache, so its periodic SessionUpdate only carries the
+                        // current session until a machine-wide scan runs. Without
+                        // this, other sessions appear only after switching through
+                        // another manager.
+                        refresh_session_list(self);
+                    }
+                    PermissionStatus::Denied => {
+                        self.set_error("Permissions denied".to_string());
+                    }
+                }
+                true
+            }
+            // Re-scan whenever the plugin is surfaced: a resident instance would
+            // otherwise show a stale list built when it last loaded.
+            Event::Visible(true) if self.permissions_granted() => refresh_session_list(self),
+            Event::SessionUpdate(infos, resurrectable) => {
+                self.update_sessions(infos);
+                self.update_resurrectable(resurrectable);
+                true
+            }
+            Event::RunCommandResult(exit_code, stdout, stderr, context) => {
+                if context.contains_key("zoxide_query") {
+                    if exit_code == Some(0) {
+                        let output = String::from_utf8_lossy(&stdout);
+                        let directories = parse_zoxide_output(&output);
+                        self.update_directories(directories);
+                    } else {
+                        let error = String::from_utf8_lossy(&stderr);
+                        self.set_error(format!("zoxide error: {}", error));
+                    }
+                } else if context.contains_key("socket_dir_probe") {
+                    // On failure, stay on the conservative fallback budget.
+                    if exit_code == Some(0) {
+                        let output = String::from_utf8_lossy(&stdout);
+                        let socket_dir = output.trim();
+                        if !socket_dir.is_empty() {
+                            self.apply_socket_dir(socket_dir);
+                        }
+                    }
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn pipe(&mut self, message: PipeMessage) -> bool {
+        if message.name == "filepicker_result" {
+            if let (Some(payload), Some(request_id)) =
+                (message.payload, message.args.get("request_id"))
+            {
+                if self.is_valid_request_id(request_id) {
+                    self.remove_request_id(request_id);
+                    let path = PathBuf::from(payload);
+                    let folder = if path.is_file() {
+                        path.parent().map(|p| p.to_path_buf()).unwrap_or(path)
+                    } else {
+                        path
+                    };
+                    self.set_new_session_folder(Some(folder));
+                }
+            }
+            true
+        } else {
+            false
+        }
+    }
+
+    fn render(&mut self, rows: usize, cols: usize) {
+        ui::render(self, rows, cols);
+    }
+}
+
+fn refresh_session_list(state: &mut AppState) -> bool {
+    match get_session_list() {
+        Ok(snapshot) => {
+            state.update_sessions(snapshot.live_sessions);
+            state.update_resurrectable(snapshot.resurrectable_sessions);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+fn fetch_zoxide_directories() {
+    let mut context = BTreeMap::new();
+    context.insert("zoxide_query".to_string(), "true".to_string());
+    run_command(&["zoxide", "query", "-l", "-s"], context);
+}
+
+fn probe_socket_dir() {
+    let mut context = BTreeMap::new();
+    context.insert("socket_dir_probe".to_string(), "true".to_string());
+    run_command(&["sh", "-c", SOCKET_DIR_PROBE], context);
+}
